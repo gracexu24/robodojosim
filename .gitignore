@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+outputs/
+datasets/
+*.hdf5
+*.partial.hdf5
+.DS_Store

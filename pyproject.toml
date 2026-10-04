@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robodojosim"
+version = "0.2.0"
+description = "Scripted expert controller and dataset recorder for RoboDojo's bottle task"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24", "h5py>=3.10", "opencv-python-headless>=4.8,<5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+robodojosim = "robodojosim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
