@@ -10,6 +10,12 @@ the complete tuning surface; no controller code should need editing.
 - `left_grasp_quaternion: null` means “preserve the episode-start left EE orientation.”
 - Gripper values are normalized: `1.0` open and `0.0` closed.
 
+For the shipped dual-X5 embodiment, RoboDojo declares the left arm's preferred direction as
+`top_down_little_right` and the right arm's as `top_down_little_left`. The corresponding calibrated wxyz quaternions
+are `[-0.61239, 0.353523, -0.61239, -0.353524]` and
+`[-0.353523, 0.61239, -0.353524, -0.61239]`. Preserving the home orientation can make low bottle poses
+unreachable even though the hand looks roughly vertical.
+
 ## Recommended sequence
 
 1. Temporarily set `direct_left_max_x` high enough to route all reachable test objects to the left arm.

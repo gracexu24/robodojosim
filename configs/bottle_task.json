@@ -14,8 +14,8 @@
   "workspace_max": [0.75, 0.40, 1.35],
   "handover_left_position": [-0.025, -0.02, 1.02],
   "handover_right_position": [0.025, -0.02, 1.02],
-  "left_grasp_quaternion": null,
-  "right_grasp_quaternion": null,
+  "left_grasp_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
+  "right_grasp_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239],
   "left_handover_quaternion": null,
   "right_handover_quaternion": null
 }
