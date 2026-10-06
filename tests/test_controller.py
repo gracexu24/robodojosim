@@ -63,3 +63,19 @@ def test_workspace_guard_rejects_unsafe_target():
     unsafe = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
     with pytest.raises(SafetyError):
         BottleController(ControllerConfig()).reset(unsafe)
+
+
+def test_center_offset_calibration_plan_stops_after_one_lift():
+    env = MockBottleEnv(seed=2)
+    config = ControllerConfig(
+        grasp_center_offset=0.06,
+        bottle_limit=1,
+        stop_after_lift=True,
+        lift_hold_steps=8,
+    )
+    controller = BottleController(config)
+    controller.reset(env.snapshot())
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    assert planned[-1].phase is Phase.LIFT
+    assert {step.bottle for step in planned} == {"bottle0"}
+    assert sum(step.phase is Phase.LIFT for step in planned) >= 8

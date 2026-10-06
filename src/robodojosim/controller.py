@@ -36,6 +36,7 @@ class ControllerConfig:
     approach_height: float = 0.14
     lift_height: float = 0.20
     grasp_clearance: float = 0.015
+    grasp_center_offset: float | None = None
     drop_clearance: float = 0.18
     retreat_height: float = 0.14
     bottle_fallback_half_height: float = 0.045
@@ -44,7 +45,10 @@ class ControllerConfig:
     open_value: float = 1.0
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
+    lift_hold_steps: int = 1
     max_actions: int = 650
+    bottle_limit: int | None = None
+    stop_after_lift: bool = False
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
     workspace_max: tuple[float, float, float] = (0.75, 0.40, 1.35)
     # These are tool-center positions, not bottle positions. They are expected
@@ -62,8 +66,10 @@ class ControllerConfig:
     def __post_init__(self) -> None:
         if self.max_translation_step <= 0:
             raise ValueError("max_translation_step must be positive")
-        if self.gripper_hold_steps < 1 or self.max_actions < 1:
-            raise ValueError("gripper_hold_steps and max_actions must be positive")
+        if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
+            raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
+        if self.bottle_limit is not None and self.bottle_limit < 1:
+            raise ValueError("bottle_limit must be positive when provided")
         if np.any(np.asarray(self.workspace_min) >= np.asarray(self.workspace_max)):
             raise ValueError("workspace_min must be below workspace_max")
         if self.height_jitter < 0 or self.drop_xy_jitter < 0:
@@ -171,6 +177,8 @@ class BottleController:
         bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
         if self.config.vary_bottle_order:
             rng.shuffle(bottle_order)
+        if self.config.bottle_limit is not None:
+            bottle_order = bottle_order[: self.config.bottle_limit]
         for label in bottle_order:
             height_delta = float(rng.uniform(-self.config.height_jitter, self.config.height_jitter))
             drop_xy = rng.uniform(-self.config.drop_xy_jitter, self.config.drop_xy_jitter, size=2)
@@ -186,7 +194,13 @@ class BottleController:
             orientation = self._orientation(pick_arm, snapshot)
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle.pose.position.copy()
-            grasp_position[2] = top + self.config.grasp_clearance
+            if self.config.grasp_center_offset is None:
+                grasp_position[2] = top + self.config.grasp_clearance
+            else:
+                # RoboDojo's bottle assets include upright and sideways poses.
+                # A tool-center offset from the live bounding-box center is
+                # invariant to that orientation, unlike a local-z "top".
+                grasp_position[2] = bottle.pose.position[2] + self.config.grasp_center_offset
             pregrasp = Pose(
                 grasp_position + np.array([0.0, 0.0, self.config.approach_height + height_delta]), orientation
             )
@@ -201,7 +215,19 @@ class BottleController:
             )
             grippers[pick_arm] = self.config.closed_value
             events.append(self._event(Phase.CLOSE, poses, grippers, pick_arm, grasp, label, self.config.gripper_hold_steps))
-            events.append(self._event(Phase.LIFT, poses, grippers, pick_arm, lift, label))
+            events.append(
+                self._event(
+                    Phase.LIFT,
+                    poses,
+                    grippers,
+                    pick_arm,
+                    lift,
+                    label,
+                    self.config.lift_hold_steps,
+                )
+            )
+            if self.config.stop_after_lift:
+                return events
 
             carrying_arm = pick_arm
             if pick_arm == "right":

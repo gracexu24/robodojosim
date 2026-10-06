@@ -7,9 +7,11 @@
   "drop_clearance": 0.18,
   "retreat_height": 0.14,
   "direct_left_max_x": 0.08,
-  "gripper_hold_steps": 3,
-  "lift_hold_steps": 5,
-  "max_actions": 650,
+  "gripper_hold_steps": 5,
+  "lift_hold_steps": 20,
+  "max_actions": 200,
+  "bottle_limit": 1,
+  "stop_after_lift": true,
   "workspace_min": [-0.85, -0.55, 0.30],
   "workspace_max": [0.75, 0.40, 1.35],
   "handover_left_position": [-0.025, -0.02, 1.02],
@@ -17,8 +19,5 @@
   "left_grasp_quaternion": null,
   "right_grasp_quaternion": null,
   "left_handover_quaternion": null,
-  "right_handover_quaternion": null,
-  "vary_bottle_order": true,
-  "height_jitter": 0.015,
-  "drop_xy_jitter": 0.025
+  "right_handover_quaternion": null
 }
