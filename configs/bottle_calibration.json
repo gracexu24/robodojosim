@@ -3,7 +3,7 @@
   "approach_height": 0.14,
   "lift_height": 0.20,
   "grasp_clearance": 0.015,
-  "grasp_center_offset": 0.065,
+  "grasp_center_offset": 0.115,
   "drop_clearance": 0.18,
   "retreat_height": 0.14,
   "direct_left_max_x": 0.08,
