@@ -2,7 +2,7 @@
   "max_translation_step": 0.035,
   "max_lift_translation_step": 0.010,
   "max_carry_translation_step": 0.015,
-  "approach_height": 0.20,
+  "approach_height": 0.30,
   "lift_height": 0.20,
   "grasp_clearance": 0.015,
   "grasp_center_offset": 0.055,
@@ -20,6 +20,6 @@
   "handover_right_position": [0.025, -0.02, 1.02],
   "left_grasp_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
   "right_grasp_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239],
-  "left_handover_quaternion": null,
-  "right_handover_quaternion": null
+  "left_handover_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
+  "right_handover_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239]
 }
