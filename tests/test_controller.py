@@ -126,3 +126,24 @@ def test_arm_specific_grasp_position_offset_is_applied():
     expected = snapshot.bottles[bottle].pose.position + offset
     expected[2] += 0.055
     np.testing.assert_allclose(target, expected)
+
+
+def test_loaded_lift_uses_smaller_motion_steps():
+    env = MockBottleEnv(seed=1)
+    controller = BottleController(
+        ControllerConfig(
+            max_translation_step=0.04,
+            max_carry_translation_step=0.01,
+            grasp_center_offset=0.055,
+            bottle_limit=1,
+            stop_after_lift=True,
+        )
+    )
+    controller.reset(env.snapshot())
+    lift_positions = []
+    while not controller.done:
+        step = controller.next_action()
+        if step.phase is Phase.LIFT:
+            lift_positions.append(step.action["left_ee_pose"][:3])
+    deltas = np.linalg.norm(np.diff(lift_positions, axis=0), axis=1)
+    assert np.max(deltas) <= 0.010001

@@ -33,6 +33,7 @@ class SafetyError(RuntimeError):
 @dataclass(frozen=True)
 class ControllerConfig:
     max_translation_step: float = 0.035
+    max_carry_translation_step: float = 0.010
     approach_height: float = 0.14
     lift_height: float = 0.20
     grasp_clearance: float = 0.015
@@ -46,7 +47,7 @@ class ControllerConfig:
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
     lift_hold_steps: int = 1
-    max_actions: int = 650
+    max_actions: int = 700
     bottle_limit: int | None = None
     stop_after_lift: bool = False
     use_overhead_approach: bool = True
@@ -69,6 +70,8 @@ class ControllerConfig:
     def __post_init__(self) -> None:
         if self.max_translation_step <= 0:
             raise ValueError("max_translation_step must be positive")
+        if self.max_carry_translation_step <= 0:
+            raise ValueError("max_carry_translation_step must be positive")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
         if self.bottle_limit is not None and self.bottle_limit < 1:
@@ -333,7 +336,13 @@ class BottleController:
                 continue
             target = event.poses[arm]
             self._check_pose(target, event.phase)
-            waypoints = interpolate_pose(current[arm], target, self.config.max_translation_step)
+            loaded_phases = {Phase.LIFT, Phase.TRANSIT, Phase.HANDOVER}
+            max_step = (
+                self.config.max_carry_translation_step
+                if event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value
+                else self.config.max_translation_step
+            )
+            waypoints = interpolate_pose(current[arm], target, max_step)
             for waypoint in waypoints:
                 action_poses = dict(current)
                 action_poses[arm] = waypoint
