@@ -58,6 +58,20 @@ conda run -n RoboDojo robodojosim validate \
 Do not treat `success=False` files as demonstrations. Retain them for debugging or move them out of the training
 split based on `manifest.json`.
 
+To watch the same run in the Isaac Sim GUI, first patch the pinned RoboDojo launcher and then run from a terminal on
+the Ubuntu desktop (not from a display-less SSH session):
+
+```bash
+cd /workspace/robodojosim
+bash scripts/enable_gui_mode.sh /workspace/RoboDojo
+export ROBODOJO_HEADLESS=0
+export OMNI_KIT_ACCEPT_EULA=YES
+export ROBODOJOSIM_EVAL_NUM=1
+bash scripts/run_collection.sh \
+  /workspace/RoboDojo/XPolicyLab \
+  0 RoboDojoPolicy RoboDojo /workspace/datasets/bottle-gui
+```
+
 ## 4. Calibrate
 
 Edit a copy of `configs/bottle_task.json` and point the run at it:

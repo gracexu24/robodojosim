@@ -104,6 +104,31 @@ Episode IDs come from RoboDojo's deterministic layout IDs. Omit `ROBODOJOSIM_EVA
 official layout set. Existing successful HDF5 files are never overwritten; failed layouts are retried. See
 [docs/ubuntu-runbook.md](docs/ubuntu-runbook.md) before the first GPU run.
 
+### Run the bottle task with the Isaac Sim GUI
+
+RoboDojo's evaluator is headless by default. Install this repository's small, reversible GUI toggle into the pinned
+RoboDojo checkout once:
+
+```bash
+bash scripts/enable_gui_mode.sh /path/to/RoboDojo
+```
+
+Then launch a one-layout calibration run from a terminal on the Ubuntu desktop:
+
+```bash
+export OMNI_KIT_ACCEPT_EULA=YES
+export ROBODOJO_HEADLESS=0
+export ROBODOJOSIM_EVAL_NUM=1
+export PATH="$HOME/miniforge3/bin:$PATH"
+
+bash scripts/run_collection.sh \
+  /path/to/RoboDojo/XPolicyLab \
+  0 RoboDojoPolicy RoboDojo /absolute/path/to/dataset
+```
+
+The policy server uses the lightweight `RoboDojoPolicy` environment because current XPolicyLab requires
+`websockets>=14`, while the Isaac Sim environment uses RoboDojo's `websockets==12` compatibility pin.
+
 ## Collection campaigns
 
 After the one-layout calibration succeeds, collect 50 successful policy episodes:

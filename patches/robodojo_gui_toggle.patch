@@ -1,0 +1,25 @@
+diff --git a/scripts/eval_policy.sh b/scripts/eval_policy.sh
+--- a/scripts/eval_policy.sh
++++ b/scripts/eval_policy.sh
+@@ -101,6 +101,12 @@ echo "[INFO] num_envs        = ${num_envs}"
+ 
+ extra_args=()
+ 
++headless_args=(--headless)
++if [[ "${ROBODOJO_HEADLESS:-1}" == "0" ]]; then
++  headless_args=()
++  echo "[INFO] GUI mode enabled (ROBODOJO_HEADLESS=0)"
++fi
++
+ KIT_ENABLE_EXTS=(
+   "isaacsim.replicator.behavior"
+   "isaacsim.sensors.camera"
+@@ -138,7 +144,7 @@ while : ; do
+     --additional_info "$additional_info" \
+     --seed "$seed" \
+     --host "$host" \
+-    --headless \
++    "${headless_args[@]}" \
+     "${extra_args[@]}" \
+     "$@"
+   rc=$?
