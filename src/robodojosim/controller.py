@@ -50,6 +50,8 @@ class ControllerConfig:
     bottle_limit: int | None = None
     stop_after_lift: bool = False
     use_overhead_approach: bool = True
+    left_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    right_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
     workspace_max: tuple[float, float, float] = (0.75, 0.40, 1.35)
     # These are tool-center positions, not bottle positions. They are expected
@@ -202,6 +204,9 @@ class BottleController:
                 # A tool-center offset from the live bounding-box center is
                 # invariant to that orientation, unlike a local-z "top".
                 grasp_position[2] = bottle.pose.position[2] + self.config.grasp_center_offset
+            grasp_position += np.asarray(
+                getattr(self.config, f"{pick_arm}_grasp_position_offset"), dtype=np.float64
+            )
             pregrasp = Pose(
                 grasp_position + np.array([0.0, 0.0, self.config.approach_height + height_delta]), orientation
             )

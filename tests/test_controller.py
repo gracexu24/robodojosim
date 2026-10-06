@@ -101,3 +101,28 @@ def test_overhead_approach_rises_before_translating_to_bottle():
     assert np.linalg.norm(first[:2] - home[:2]) < np.linalg.norm(last[:2] - home[:2])
     np.testing.assert_allclose(last[:2], target[:2], atol=1e-6)
     assert last[2] > target[2] + config.grasp_center_offset
+
+
+def test_arm_specific_grasp_position_offset_is_applied():
+    env = MockBottleEnv(seed=1)
+    snapshot = env.snapshot()
+    offset = np.array([0.006, 0.025, 0.0])
+    controller = BottleController(
+        ControllerConfig(
+            grasp_center_offset=0.055,
+            left_grasp_position_offset=tuple(offset),
+            bottle_limit=1,
+            stop_after_lift=True,
+        )
+    )
+    controller.reset(snapshot)
+    grasp_steps = []
+    while not controller.done:
+        step = controller.next_action()
+        if step.phase is Phase.GRASP:
+            grasp_steps.append(step)
+    bottle = min(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
+    target = grasp_steps[-1].action["left_ee_pose"][:3]
+    expected = snapshot.bottles[bottle].pose.position + offset
+    expected[2] += 0.055
+    np.testing.assert_allclose(target, expected)
