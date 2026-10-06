@@ -104,8 +104,9 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-world-6h
 ```
 
-Keep these in separate directories. The first command stops at 50 successful episodes. The second stops at six hours
-of successful recorded frames and may require roughly 1,500–1,700 episodes at the current scripted trajectory length.
+Keep these in separate directories. The first command stops at 50 successful simple-task episodes. The second stops
+at six hours of complete randomized interaction frames; its episodes include pushing, airborne holding, and waypoint
+carrying.
 That estimate changes after calibration, so use `robodojosim report` rather than an episode count for the world-model
 target.
 

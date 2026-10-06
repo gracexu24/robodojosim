@@ -30,6 +30,10 @@ class EpisodeInfo:
 @dataclass(frozen=True)
 class DatasetStats:
     complete_episodes: int
+    complete_frames: int
+    complete_seconds: float
+    complete_hours: float
+    mean_complete_seconds: float
     successful_episodes: int
     failed_episodes: int
     successful_frames: int
@@ -94,10 +98,16 @@ def summarize_dataset(dataset_dir: str | Path, *, profile: str | None = None) ->
     records, invalid = list_episodes(dataset_dir, profile=profile)
     complete = [record for record in records if record.complete]
     successful = [record for record in complete if record.success]
+    complete_frames = sum(record.frames for record in complete)
+    complete_seconds = sum(record.seconds for record in complete)
     frames = sum(record.frames for record in successful)
     seconds = sum(record.seconds for record in successful)
     return DatasetStats(
         complete_episodes=len(complete),
+        complete_frames=complete_frames,
+        complete_seconds=complete_seconds,
+        complete_hours=complete_seconds / 3600.0,
+        mean_complete_seconds=complete_seconds / len(complete) if complete else 0.0,
         successful_episodes=len(successful),
         failed_episodes=sum(not record.success for record in complete),
         successful_frames=frames,
@@ -121,12 +131,16 @@ def write_splits(
         raise ValueError("ratios must satisfy train > 0, validation >= 0, and train + validation < 1")
     dataset_dir = Path(dataset_dir)
     records, _ = list_episodes(dataset_dir, profile=profile)
-    successful = [record for record in records if record.complete and record.success]
-    if not successful:
-        raise ValueError("dataset contains no successful complete episodes")
+    eligible = [
+        record
+        for record in records
+        if record.complete and (record.success or profile == "world_model")
+    ]
+    if not eligible:
+        raise ValueError("dataset contains no eligible complete episodes")
 
     by_layout: dict[int, list[EpisodeInfo]] = {}
-    for record in successful:
+    for record in eligible:
         by_layout.setdefault(record.layout_seed, []).append(record)
     layouts = sorted(by_layout)
     random.Random(seed).shuffle(layouts)

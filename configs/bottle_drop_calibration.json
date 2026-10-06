@@ -1,6 +1,7 @@
 {
   "max_translation_step": 0.035,
-  "max_carry_translation_step": 0.010,
+  "max_lift_translation_step": 0.010,
+  "max_carry_translation_step": 0.015,
   "approach_height": 0.20,
   "lift_height": 0.20,
   "grasp_clearance": 0.015,

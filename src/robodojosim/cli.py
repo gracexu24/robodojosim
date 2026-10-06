@@ -148,6 +148,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--field",
         choices=(
             "complete_episodes",
+            "complete_frames",
+            "complete_seconds",
+            "complete_hours",
+            "mean_complete_seconds",
             "successful_episodes",
             "failed_episodes",
             "successful_frames",

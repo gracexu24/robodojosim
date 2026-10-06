@@ -133,6 +133,7 @@ def test_loaded_lift_uses_smaller_motion_steps():
     controller = BottleController(
         ControllerConfig(
             max_translation_step=0.04,
+            max_lift_translation_step=0.01,
             max_carry_translation_step=0.01,
             grasp_center_offset=0.055,
             bottle_limit=1,
@@ -147,3 +148,42 @@ def test_loaded_lift_uses_smaller_motion_steps():
             lift_positions.append(step.action["left_ee_pose"][:3])
     deltas = np.linalg.norm(np.diff(lift_positions, axis=0), axis=1)
     assert np.max(deltas) <= 0.010001
+
+
+def test_world_model_plan_contains_push_hold_and_randomized_carry():
+    config = ControllerConfig(
+        world_model_movements=True,
+        push_probability=1.0,
+        bottle_limit=2,
+        hold_steps_min=3,
+        hold_steps_max=5,
+        carry_waypoints_min=2,
+        carry_waypoints_max=3,
+        carry_xy_jitter=0.05,
+        carry_z_jitter=0.03,
+        max_actions=700,
+    )
+    controller = BottleController(config, trajectory_variant=9)
+    controller.reset(MockBottleEnv(seed=4).snapshot())
+    phases = []
+    while not controller.done:
+        phases.append(controller.next_action().phase)
+    assert Phase.PUSH in phases
+    assert Phase.HOLD in phases
+    assert Phase.CARRY in phases
+
+
+def test_bottle_labels_can_isolate_right_arm_calibration():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(bottle_labels=("bottle3",), bottle_limit=1, stop_after_lift=True)
+    )
+    controller.reset(snapshot)
+    active_arms = set()
+    bottles = set()
+    while not controller.done:
+        step = controller.next_action()
+        active_arms.add(step.active_arm)
+        bottles.add(step.bottle)
+    assert active_arms == {"right"}
+    assert bottles == {"bottle3"}

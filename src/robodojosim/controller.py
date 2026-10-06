@@ -18,6 +18,9 @@ class Phase(str, Enum):
     GRASP = "grasp"
     CLOSE = "close"
     LIFT = "lift"
+    HOLD = "hold"
+    CARRY = "carry"
+    PUSH = "push"
     TRANSIT = "transit"
     HANDOVER = "handover"
     RELEASE = "release"
@@ -33,7 +36,8 @@ class SafetyError(RuntimeError):
 @dataclass(frozen=True)
 class ControllerConfig:
     max_translation_step: float = 0.035
-    max_carry_translation_step: float = 0.010
+    max_lift_translation_step: float = 0.010
+    max_carry_translation_step: float = 0.015
     approach_height: float = 0.14
     lift_height: float = 0.20
     grasp_clearance: float = 0.015
@@ -49,6 +53,7 @@ class ControllerConfig:
     lift_hold_steps: int = 1
     max_actions: int = 700
     bottle_limit: int | None = None
+    bottle_labels: tuple[str, ...] | None = None
     stop_after_lift: bool = False
     use_overhead_approach: bool = True
     left_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -66,20 +71,40 @@ class ControllerConfig:
     vary_bottle_order: bool = False
     height_jitter: float = 0.0
     drop_xy_jitter: float = 0.0
+    world_model_movements: bool = False
+    push_probability: float = 0.0
+    push_distance: float = 0.10
+    push_center_offset: float = 0.115
+    hold_steps_min: int = 1
+    hold_steps_max: int = 1
+    carry_waypoints_min: int = 0
+    carry_waypoints_max: int = 0
+    carry_xy_jitter: float = 0.0
+    carry_z_jitter: float = 0.0
 
     def __post_init__(self) -> None:
         if self.max_translation_step <= 0:
             raise ValueError("max_translation_step must be positive")
-        if self.max_carry_translation_step <= 0:
-            raise ValueError("max_carry_translation_step must be positive")
+        if self.max_lift_translation_step <= 0 or self.max_carry_translation_step <= 0:
+            raise ValueError("loaded translation steps must be positive")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
+        if self.bottle_labels is not None and (not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)):
+            raise ValueError("bottle_labels must be non-empty and unique when provided")
         if np.any(np.asarray(self.workspace_min) >= np.asarray(self.workspace_max)):
             raise ValueError("workspace_min must be below workspace_max")
         if self.height_jitter < 0 or self.drop_xy_jitter < 0:
             raise ValueError("trajectory jitter values cannot be negative")
+        if not 0.0 <= self.push_probability <= 1.0:
+            raise ValueError("push_probability must be between zero and one")
+        if self.push_distance < 0 or self.carry_xy_jitter < 0 or self.carry_z_jitter < 0:
+            raise ValueError("movement distances cannot be negative")
+        if not 1 <= self.hold_steps_min <= self.hold_steps_max:
+            raise ValueError("hold step range must be positive and ordered")
+        if not 0 <= self.carry_waypoints_min <= self.carry_waypoints_max:
+            raise ValueError("carry waypoint range must be non-negative and ordered")
 
     @classmethod
     def from_json(cls, path: str | Path) -> ControllerConfig:
@@ -174,7 +199,12 @@ class BottleController:
         poses = dict(snapshot.arms)
         grippers = {"left": self.config.open_value, "right": self.config.open_value}
         events: list[_Event] = []
-        rng = np.random.default_rng(self.trajectory_variant)
+        layout_words = [
+            round((coordinate + 2.0) * 10_000)
+            for name in sorted(snapshot.bottles)
+            for coordinate in snapshot.bottles[name].pose.position[:2]
+        ]
+        rng = np.random.default_rng(np.random.SeedSequence([self.trajectory_variant, *layout_words]))
         dustbin_top = bbox_top(
             snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
         )
@@ -183,9 +213,14 @@ class BottleController:
         bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
         if self.config.vary_bottle_order:
             rng.shuffle(bottle_order)
+        if self.config.bottle_labels is not None:
+            missing = set(self.config.bottle_labels) - set(snapshot.bottles)
+            if missing:
+                raise SafetyError(f"configured bottles are absent from the scene: {sorted(missing)}")
+            bottle_order = list(self.config.bottle_labels)
         if self.config.bottle_limit is not None:
             bottle_order = bottle_order[: self.config.bottle_limit]
-        for label in bottle_order:
+        for bottle_index, label in enumerate(bottle_order):
             height_delta = float(rng.uniform(-self.config.height_jitter, self.config.height_jitter))
             drop_xy = rng.uniform(-self.config.drop_xy_jitter, self.config.drop_xy_jitter, size=2)
             drop_position = np.array(
@@ -198,6 +233,13 @@ class BottleController:
             bottle = snapshot.bottles[label]
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
             orientation = self._orientation(pick_arm, snapshot)
+            if (
+                self.config.world_model_movements
+                and bottle_index == 0
+                and rng.random() < self.config.push_probability
+            ):
+                self._append_push(events, poses, grippers, bottle.pose.position, orientation, pick_arm, label, rng)
+                continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle.pose.position.copy()
             if self.config.grasp_center_offset is None:
@@ -244,6 +286,30 @@ class BottleController:
                     self.config.lift_hold_steps,
                 )
             )
+            if self.config.world_model_movements:
+                hold_steps = int(rng.integers(self.config.hold_steps_min, self.config.hold_steps_max + 1))
+                events.append(self._event(Phase.HOLD, poses, grippers, pick_arm, lift, label, hold_steps))
+                waypoint_count = int(
+                    rng.integers(self.config.carry_waypoints_min, self.config.carry_waypoints_max + 1)
+                )
+                for _ in range(waypoint_count):
+                    offset = np.array(
+                        [
+                            rng.uniform(-self.config.carry_xy_jitter, self.config.carry_xy_jitter),
+                            rng.uniform(-self.config.carry_xy_jitter, self.config.carry_xy_jitter),
+                            rng.uniform(-self.config.carry_z_jitter, self.config.carry_z_jitter),
+                        ]
+                    )
+                    position = np.clip(
+                        lift.position + offset,
+                        np.asarray(self.config.workspace_min) + 0.02,
+                        np.asarray(self.config.workspace_max) - 0.02,
+                    )
+                    events.append(
+                        self._event(Phase.CARRY, poses, grippers, pick_arm, Pose(position, orientation), label)
+                    )
+                if waypoint_count:
+                    events.append(self._event(Phase.CARRY, poses, grippers, pick_arm, lift, label))
             if self.config.stop_after_lift:
                 return events
 
@@ -313,6 +379,56 @@ class BottleController:
             events.append(self._event(Phase.HOME, poses, grippers, arm, self._home[arm], None))
         return events
 
+    def _append_push(
+        self,
+        events: list[_Event],
+        poses: dict[str, Pose],
+        grippers: dict[str, float],
+        bottle_position: np.ndarray,
+        orientation: np.ndarray,
+        arm: str,
+        label: str,
+        rng: np.random.Generator,
+    ) -> None:
+        direction = 1.0 if rng.random() < 0.5 else -1.0
+        start = bottle_position.copy()
+        start[1] -= direction * self.config.push_distance * 0.5
+        start[2] += self.config.push_center_offset
+        end = start.copy()
+        end[1] += direction * self.config.push_distance
+        overhead_start = start + np.array([0.0, 0.0, self.config.approach_height])
+        current_overhead = np.array([poses[arm].position[0], poses[arm].position[1], overhead_start[2]])
+        events.append(self._event(Phase.APPROACH, poses, grippers, arm, Pose(current_overhead, orientation), label))
+        events.append(self._event(Phase.APPROACH, poses, grippers, arm, Pose(overhead_start, orientation), label))
+        grippers[arm] = self.config.closed_value
+        events.append(
+            self._event(
+                Phase.CLOSE,
+                poses,
+                grippers,
+                arm,
+                Pose(overhead_start, orientation),
+                label,
+                self.config.gripper_hold_steps,
+            )
+        )
+        events.append(self._event(Phase.PUSH, poses, grippers, arm, Pose(start, orientation), label))
+        events.append(self._event(Phase.PUSH, poses, grippers, arm, Pose(end, orientation), label))
+        retreat = end + np.array([0.0, 0.0, self.config.retreat_height])
+        events.append(self._event(Phase.RETREAT, poses, grippers, arm, Pose(retreat, orientation), label))
+        grippers[arm] = self.config.open_value
+        events.append(
+            self._event(
+                Phase.RELEASE,
+                poses,
+                grippers,
+                arm,
+                Pose(retreat, orientation),
+                label,
+                self.config.gripper_hold_steps,
+            )
+        )
+
     @staticmethod
     def _event(
         phase: Phase,
@@ -336,12 +452,13 @@ class BottleController:
                 continue
             target = event.poses[arm]
             self._check_pose(target, event.phase)
-            loaded_phases = {Phase.LIFT, Phase.TRANSIT, Phase.HANDOVER}
-            max_step = (
-                self.config.max_carry_translation_step
-                if event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value
-                else self.config.max_translation_step
-            )
+            loaded_phases = {Phase.HOLD, Phase.CARRY, Phase.TRANSIT, Phase.HANDOVER}
+            if event.phase is Phase.LIFT and current_grippers[arm] == self.config.closed_value:
+                max_step = self.config.max_lift_translation_step
+            elif event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value:
+                max_step = self.config.max_carry_translation_step
+            else:
+                max_step = self.config.max_translation_step
             waypoints = interpolate_pose(current[arm], target, max_step)
             for waypoint in waypoints:
                 action_poses = dict(current)

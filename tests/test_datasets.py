@@ -33,6 +33,8 @@ def test_dataset_stats_and_layout_grouped_splits(tmp_path):
         _one_frame_episode(tmp_path, episode_id, layout_seed, success=episode_id != 5)
     stats = summarize_dataset(tmp_path, profile="policy")
     assert stats.complete_episodes == 6
+    assert stats.complete_frames == 6
+    assert stats.complete_seconds == 0.24
     assert stats.successful_episodes == 5
     assert stats.failed_episodes == 1
     assert stats.successful_frames == 5
@@ -47,6 +49,22 @@ def test_dataset_stats_and_layout_grouped_splits(tmp_path):
             seen[layout] = split_name
     assert set(seen) == {0, 1, 2}
 
+
+def test_world_model_stats_and_splits_include_complete_failed_interactions(tmp_path):
+    _one_frame_episode(tmp_path, 0, 0, success=False, profile="world_model")
+    _one_frame_episode(tmp_path, 1, 1, success=True, profile="world_model")
+    stats = summarize_dataset(tmp_path, profile="world_model")
+    assert stats.complete_episodes == 2
+    assert stats.complete_seconds == 0.08
+    assert stats.successful_episodes == 1
+    split_path = write_splits(
+        tmp_path, profile="world_model", train_ratio=0.5, validation_ratio=0.0
+    )
+    payload = json.loads(split_path.read_text())
+    episodes = {
+        name for split in payload["splits"].values() for name in split["episodes"]
+    }
+    assert episodes == {"episode_000000.hdf5", "episode_000001.hdf5"}
 
 def test_campaign_targets_and_dry_run(tmp_path, capsys):
     stats = summarize_dataset(tmp_path, profile="world_model")

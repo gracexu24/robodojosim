@@ -4,7 +4,6 @@
   "max_carry_translation_step": 0.015,
   "approach_height": 0.20,
   "lift_height": 0.20,
-  "grasp_clearance": 0.015,
   "grasp_center_offset": 0.055,
   "left_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
@@ -12,8 +11,10 @@
   "retreat_height": 0.14,
   "direct_left_max_x": 0.08,
   "gripper_hold_steps": 5,
-  "lift_hold_steps": 5,
-  "max_actions": 700,
+  "lift_hold_steps": 20,
+  "max_actions": 220,
+  "bottle_labels": ["bottle1"],
+  "stop_after_lift": true,
   "workspace_min": [-0.85, -0.55, 0.30],
   "workspace_max": [0.75, 0.40, 1.35],
   "handover_left_position": [-0.025, -0.02, 1.02],
@@ -21,8 +22,5 @@
   "left_grasp_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
   "right_grasp_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239],
   "left_handover_quaternion": null,
-  "right_handover_quaternion": null,
-  "vary_bottle_order": true,
-  "height_jitter": 0.008,
-  "drop_xy_jitter": 0.015
+  "right_handover_quaternion": null
 }

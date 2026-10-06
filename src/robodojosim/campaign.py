@@ -21,16 +21,16 @@ class CampaignTarget:
         if self.target_episodes is not None:
             return stats.successful_episodes >= self.target_episodes
         assert self.target_seconds is not None
-        return stats.successful_seconds >= self.target_seconds
+        return stats.complete_seconds >= self.target_seconds
 
     def remaining_batch_size(self, stats: DatasetStats, maximum: int) -> int:
         if self.target_episodes is not None:
             return max(1, min(maximum, self.target_episodes - stats.successful_episodes))
         assert self.target_seconds is not None
-        remaining = self.target_seconds - stats.successful_seconds
-        if stats.mean_successful_seconds <= 0:
+        remaining = self.target_seconds - stats.complete_seconds
+        if stats.mean_complete_seconds <= 0:
             return maximum
-        return max(1, min(maximum, math.ceil(remaining / stats.mean_successful_seconds)))
+        return max(1, min(maximum, math.ceil(remaining / stats.mean_complete_seconds)))
 
 
 def campaign_target(profile: str, *, target_episodes: int = 50, target_hours: float = 6.0) -> CampaignTarget:
@@ -156,18 +156,18 @@ def run_campaign(
             )
             return stats
 
-        before_successes = stats.successful_episodes
+        before_progress = stats.successful_episodes if profile == "policy" else stats.complete_episodes
         subprocess.run(command, env=environment, check=True)
         updated = summarize_dataset(output, profile=profile)
         state["next_pass"] = pass_index + 1
         state["no_progress_passes"] = (
             int(state.get("no_progress_passes", 0)) + 1
-            if updated.successful_episodes == before_successes
+            if (updated.successful_episodes if profile == "policy" else updated.complete_episodes) == before_progress
             else 0
         )
         state["status"] = "running"
         state["stats"] = updated.to_dict()
         _save_state(state_path, state)
         if state["no_progress_passes"] >= 3:
-            raise RuntimeError("three consecutive passes produced no successful episodes; calibrate before continuing")
+            raise RuntimeError("three consecutive passes produced no usable episodes; calibrate before continuing")
         passes_this_run += 1

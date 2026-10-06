@@ -32,10 +32,13 @@ def eval_one_episode(TASK_ENV, model_client):
     controller.reset(snapshot)
 
     output_dir = Path(os.environ.get("ROBODOJOSIM_DATASET_DIR", "datasets/put_bottles_into_dustbin"))
+    collection_profile = os.environ.get("ROBODOJOSIM_COLLECTION_PROFILE", "manual")
     layout_seed = _seed(TASK_ENV)
     episode_id = layout_seed + int(os.environ.get("ROBODOJOSIM_EPISODE_OFFSET", "0"))
     recorder = None
-    if EpisodeRecorder.is_complete(output_dir, episode_id, require_success=True):
+    if EpisodeRecorder.is_complete(
+        output_dir, episode_id, require_success=collection_profile != "world_model"
+    ):
         print(f"[bottle_scripted] episode {episode_id} already recorded; executing without overwriting it")
     else:
         jpeg_quality = os.environ.get("ROBODOJOSIM_JPEG_QUALITY")
@@ -50,7 +53,7 @@ def eval_one_episode(TASK_ENV, model_client):
                 "controller": "cartesian_scripted_v1",
                 "layout_seed": layout_seed,
                 "trajectory_variant": trajectory_variant,
-                "collection_profile": os.environ.get("ROBODOJOSIM_COLLECTION_PROFILE", "manual"),
+                "collection_profile": collection_profile,
                 "campaign_id": os.environ.get("ROBODOJOSIM_CAMPAIGN_ID", "manual"),
             },
             jpeg_quality=int(jpeg_quality) if jpeg_quality else None,

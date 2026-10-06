@@ -16,7 +16,7 @@ Ubuntu + NVIDIA machine.
 - Simulator-only scene extraction for the four bottle poses and dustbin pose.
 - Streaming HDF5 recording in XPolicyLab trajectory format.
 - Atomic episode completion, a manifest, validation, and resume-by-episode ID.
-- Quota-driven campaigns for exactly 50 successful policy episodes or at least six successful recorded hours.
+- Quota-driven campaigns for exactly 50 successful policy episodes or at least six complete interaction hours.
 - XPolicyLab-compatible JPEG streams for long-running storage efficiency.
 - Layout-grouped train/validation/test splits that prevent repeat-layout leakage.
 - A kinematic mock environment, unit/integration tests, and a CLI for macOS or Linux.
@@ -153,7 +153,7 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-policy-50
 ```
 
-Collect at least six hours of successful 25 Hz world-model observations:
+Collect at least six hours of complete 25 Hz world-model interactions:
 
 ```bash
 conda run -n RoboDojo robodojosim campaign \
@@ -164,10 +164,12 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-world-6h
 ```
 
-Campaigns are resumable. The policy profile stops at 50 successful episodes. The world-model profile stops after
-successful frames divided by their recorded frequency reaches six hours (540,000 frames at 25 Hz). Each pass gets a
-new episode-ID range and deterministic trajectory variant. Images use marked JPEG at quality 90, readable by
-XPolicyLab's standard decoder.
+Campaigns are resumable. The policy profile remains the simple four-bottle task and stops at 50 successful episodes.
+The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
+hours (540,000 frames at 25 Hz). Its randomized repertoire pushes one bottle in most episodes, holds another aloft
+for a variable interval, and carries it through two to five safe waypoints before continuing. Task reward is not
+required for those deliberately exploratory episodes. Each pass gets a new episode-ID range and deterministic
+trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard decoder.
 
 RoboDojo currently exposes 25 deterministic layouts for this task. Longer campaigns revisit those layouts with
 different bottle order, trajectory heights, drop points, and policy seeds; this improves action diversity but does
