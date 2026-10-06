@@ -86,7 +86,12 @@ class RoboDojoSceneAdapter:
         return ObjectState(Pose.from_array(_numpy(state["root_pose"])))
 
     def _instance_name(self, label: str) -> str:
-        instance_name = self.task_env.layout_manager.get_instance_name(env_idx=self.env_idx, label=label)
+        layout_manager = getattr(self.task_env.scene_manager, "layout_manager", None)
+        if layout_manager is None:
+            layout_manager = getattr(self.task_env, "layout_manager", None)
+        if layout_manager is None:
+            raise RuntimeError("RoboDojo environment does not expose a layout manager")
+        instance_name = layout_manager.get_instance_name(env_idx=self.env_idx, label=label)
         if not instance_name:
             raise RuntimeError(f"no scene instance found for task label {label!r} in env {self.env_idx}")
         return str(instance_name)

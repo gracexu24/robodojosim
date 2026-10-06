@@ -24,6 +24,7 @@ class FakeSceneManager:
     def __init__(self, mock):
         self.mock = mock
         self.requests = []
+        self.layout_manager = FakeLayoutManager()
 
     def get_objects(self, env_ids, object_name, object_type):
         self.requests.append((env_ids, object_name, object_type))
@@ -42,7 +43,6 @@ class FakeLayoutManager:
 class FakeTaskEnv:
     def __init__(self, mock):
         self.scene_manager = FakeSceneManager(mock)
-        self.layout_manager = FakeLayoutManager()
 
 
 def test_scene_adapter_extracts_privileged_state_without_isaac_imports():
