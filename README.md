@@ -21,6 +21,8 @@ Ubuntu + NVIDIA machine.
 - Layout-grouped train/validation/test splits that prevent repeat-layout leakage.
 - A kinematic mock environment, unit/integration tests, and a CLI for macOS or Linux.
 - A ready-to-install `bottle_scripted` XPolicyLab adapter and Ubuntu helper scripts.
+- An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
+  metadata value of `0.22 kg`), with original JSON backups.
 
 The controller uses privileged object poses only as a scripted teacher. Those poses are stored separately under
 `/teacher`; policy observations remain the normal camera and robot state. This data is suitable for imitation
@@ -99,6 +101,10 @@ The wrapper sets the output directory, evaluation count, and controller config, 
 XPolicyLab/policy/bottle_scripted/eval.sh \
   RoboDojo put_bottles_into_dustbin scripted arx_x5 ee 0 0 0 RoboDojo RoboDojo
 ```
+
+Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22`, retaining
+`*.robodojosim-original` backups. Set `ROBODOJOSIM_FIX_BOTTLE_MASS=0` only to reproduce the uncorrected benchmark
+asset bug.
 
 Episode IDs come from RoboDojo's deterministic layout IDs. Omit `ROBODOJOSIM_EVAL_NUM=1` to process the task's full
 official layout set. Existing successful HDF5 files are never overwritten; failed layouts are retried. See

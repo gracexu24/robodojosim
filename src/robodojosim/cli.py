@@ -7,6 +7,7 @@ from pathlib import Path
 from .campaign import run_campaign
 from .controller import BottleController, ControllerConfig
 from .datasets import summarize_dataset, write_splits
+from .layouts import normalize_bottle_mass
 from .mock_env import MockBottleEnv
 from .recording import EpisodeRecorder, validate_episode
 
@@ -117,6 +118,12 @@ def _campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fix_layouts(args: argparse.Namespace) -> int:
+    changed = normalize_bottle_mass(args.robodojo_root, dry_run=args.dry_run)
+    print(json.dumps({"matching_layouts": len(changed), "dry_run": args.dry_run}, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RoboDojo scripted-controller utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -174,6 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.add_argument("--max-passes", type=int)
     campaign.add_argument("--dry-run", action="store_true")
     campaign.set_defaults(func=_campaign)
+    layouts = subparsers.add_parser("fix-layouts", help="correct the known 22 kg bottle layout typo")
+    layouts.add_argument("--robodojo-root", required=True)
+    layouts.add_argument("--dry-run", action="store_true")
+    layouts.set_defaults(func=_fix_layouts)
     return parser
 
 
