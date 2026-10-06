@@ -1,6 +1,6 @@
 {
   "max_translation_step": 0.035,
-  "approach_height": 0.14,
+  "approach_height": 0.20,
   "lift_height": 0.20,
   "grasp_clearance": 0.015,
   "grasp_center_offset": 0.065,

@@ -49,6 +49,7 @@ class ControllerConfig:
     max_actions: int = 650
     bottle_limit: int | None = None
     stop_after_lift: bool = False
+    use_overhead_approach: bool = True
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
     workspace_max: tuple[float, float, float] = (0.75, 0.40, 1.35)
     # These are tool-center positions, not bottle positions. They are expected
@@ -207,6 +208,15 @@ class BottleController:
             grasp = Pose(grasp_position, orientation)
             lift = Pose(grasp_position + np.array([0.0, 0.0, self.config.lift_height + height_delta]), orientation)
 
+            if self.config.use_overhead_approach:
+                # First rise at the current XY, then translate above the
+                # bottle. A direct diagonal move from the X5 home pose sweeps
+                # its long open fingers through tall bottles.
+                overhead = Pose(
+                    np.array([poses[pick_arm].position[0], poses[pick_arm].position[1], pregrasp.position[2]]),
+                    orientation,
+                )
+                events.append(self._event(Phase.APPROACH, poses, grippers, pick_arm, overhead, label))
             events.extend(
                 [
                     self._event(Phase.APPROACH, poses, grippers, pick_arm, pregrasp, label),

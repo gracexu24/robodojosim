@@ -79,3 +79,25 @@ def test_center_offset_calibration_plan_stops_after_one_lift():
     assert planned[-1].phase is Phase.LIFT
     assert {step.bottle for step in planned} == {"bottle0"}
     assert sum(step.phase is Phase.LIFT for step in planned) >= 8
+
+
+def test_overhead_approach_rises_before_translating_to_bottle():
+    env = MockBottleEnv(seed=1)
+    snapshot = env.snapshot()
+    config = ControllerConfig(grasp_center_offset=0.1, bottle_limit=1, stop_after_lift=True)
+    controller = BottleController(config)
+    controller.reset(snapshot)
+    approach = []
+    while controller.phase is Phase.APPROACH:
+        approach.append(controller.next_action())
+    first_bottle = min(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
+    arm = "left"
+    home = snapshot.arms[arm].position
+    target = snapshot.bottles[first_bottle].pose.position
+    # The arm first climbs near its home XY; only later does it translate over
+    # the target bottle at the full pre-grasp height.
+    first = approach[0].action["left_ee_pose"][:3]
+    last = approach[-1].action["left_ee_pose"][:3]
+    assert np.linalg.norm(first[:2] - home[:2]) < np.linalg.norm(last[:2] - home[:2])
+    np.testing.assert_allclose(last[:2], target[:2], atol=1e-6)
+    assert last[2] > target[2] + config.grasp_center_offset
