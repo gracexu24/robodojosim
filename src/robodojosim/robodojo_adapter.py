@@ -54,11 +54,15 @@ class RoboDojoSceneAdapter:
         return SceneSnapshot(arms, grippers, bottles, dustbin, str(instruction), teacher)
 
     def _rigid(self, label: str) -> ObjectState:
+        instance_name = self._instance_name(label)
         objects = self.task_env.scene_manager.get_objects(
-            env_ids=[self.env_idx], object_name=label, object_type="rigid"
+            env_ids=[self.env_idx], object_name=instance_name, object_type="rigid"
         )
         if len(objects) != 1:
-            raise RuntimeError(f"expected one rigid object for {label}, found {list(objects)}")
+            raise RuntimeError(
+                f"expected one rigid object for label {label!r} "
+                f"(instance {instance_name!r}), found {list(objects)}"
+            )
         obj = next(iter(objects.values()))
         try:
             position, orientation, bbox = obj.get_bbox(is_relative=True)
@@ -68,14 +72,24 @@ class RoboDojoSceneAdapter:
             return ObjectState(Pose(_numpy(position), _numpy(orientation)))
 
     def _geometry(self, label: str) -> ObjectState:
+        instance_name = self._instance_name(label)
         objects = self.task_env.scene_manager.get_objects(
-            env_ids=[self.env_idx], object_name=label, object_type="geometry"
+            env_ids=[self.env_idx], object_name=instance_name, object_type="geometry"
         )
         if len(objects) != 1:
-            raise RuntimeError(f"expected one geometry object for {label}, found {list(objects)}")
+            raise RuntimeError(
+                f"expected one geometry object for label {label!r} "
+                f"(instance {instance_name!r}), found {list(objects)}"
+            )
         obj = next(iter(objects.values()))
         state = obj.get_state(is_relative=True)
         return ObjectState(Pose.from_array(_numpy(state["root_pose"])))
+
+    def _instance_name(self, label: str) -> str:
+        instance_name = self.task_env.layout_manager.get_instance_name(env_idx=self.env_idx, label=label)
+        if not instance_name:
+            raise RuntimeError(f"no scene instance found for task label {label!r} in env {self.env_idx}")
+        return str(instance_name)
 
 
 def teacher_frame(snapshot: SceneSnapshot, phase: str, bottle: str | None, active_arm: str | None) -> dict[str, Any]:

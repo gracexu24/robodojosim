@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import h5py
-from test_adapter import FakeSceneManager
+from test_adapter import FakeLayoutManager, FakeSceneManager
 
 from robodojosim.mock_env import MockBottleEnv
 from robodojosim.recording import EpisodeRecorder
@@ -26,6 +26,7 @@ class FakeTaskEnv:
     def __init__(self, seed=7, allow_success=True):
         self.mock = MockBottleEnv(seed)
         self.scene_manager = FakeSceneManager(self.mock)
+        self.layout_manager = FakeLayoutManager()
         self.current_env_seed_map = {0: seed}
         self.success = [True]
         self.end_flag = [False]
