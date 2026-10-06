@@ -8,6 +8,7 @@ from .campaign import run_campaign
 from .controller import BottleController, ControllerConfig
 from .datasets import summarize_dataset, write_splits
 from .layouts import normalize_bottle_mass
+from .lerobot_export import export_lerobot
 from .mock_env import MockBottleEnv
 from .recording import EpisodeRecorder, validate_episode
 
@@ -124,6 +125,18 @@ def _fix_layouts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export_lerobot(args: argparse.Namespace) -> int:
+    output = export_lerobot(
+        args.dataset,
+        args.output or Path(args.dataset) / "lerobot",
+        profile=args.profile,
+        repo_id=args.repo_id,
+        overwrite=args.overwrite,
+    )
+    print(output)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RoboDojo scripted-controller utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -189,6 +202,13 @@ def build_parser() -> argparse.ArgumentParser:
     layouts.add_argument("--robodojo-root", required=True)
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)
+    lerobot = subparsers.add_parser("export-lerobot", help="convert complete episodes to LeRobotDataset v3.0")
+    lerobot.add_argument("--dataset", required=True)
+    lerobot.add_argument("--output")
+    lerobot.add_argument("--profile", choices=("policy", "world_model"))
+    lerobot.add_argument("--repo-id", default="robodojosim/bottle-task")
+    lerobot.add_argument("--overwrite", action="store_true")
+    lerobot.set_defaults(func=_export_lerobot)
     return parser
 
 

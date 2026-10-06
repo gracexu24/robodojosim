@@ -19,6 +19,7 @@ Ubuntu + NVIDIA machine.
 - Quota-driven campaigns for exactly 50 successful policy episodes or at least six complete interaction hours.
 - XPolicyLab-compatible JPEG streams for long-running storage efficiency.
 - Layout-grouped train/validation/test splits that prevent repeat-layout leakage.
+- Atomic LeRobotDataset v3.0 export with truthful Cartesian state/action feature names.
 - A kinematic mock environment, unit/integration tests, and a CLI for macOS or Linux.
 - A ready-to-install `bottle_scripted` XPolicyLab adapter and Ubuntu helper scripts.
 - An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
@@ -176,6 +177,22 @@ different bottle order, trajectory heights, drop points, and policy seeds; this 
 not create new initial object layouts. For a world model, treat this as six hours of task-specific interaction—not
 six hours of unique scenes. See [docs/campaigns.md](docs/campaigns.md) for quota, storage, resume, and split details.
 
+When the quota is reached, the campaign writes `splits.json` and automatically converts the eligible episodes to
+`<output>/lerobot` in LeRobotDataset v3.0 (Parquet metadata/data plus MP4 camera shards). Policy export includes only
+successful episodes; world-model export includes every complete interaction. The immutable HDF5 files remain as the
+atomic source data so an interrupted conversion can be safely rerun.
+
+LeRobot is an optional conversion dependency. Install it in the environment used to run the campaign, or convert
+later with the standalone command:
+
+```bash
+python -m pip install -e '.[lerobot]'
+robodojosim export-lerobot \
+  --dataset /workspace/datasets/bottle-policy-50 \
+  --profile policy \
+  --output /workspace/datasets/bottle-policy-50/lerobot
+```
+
 Inspect progress at any time:
 
 ```bash
@@ -213,6 +230,10 @@ episode_000000.hdf5
 ├── action/{left,right}_ee_joint_states
 └── teacher/...                  privileged diagnostics, not policy input
 ```
+
+LeRobot flattens the Cartesian state and action to 16 explicitly named values in this order:
+`left_xyz`, `left_qwxyz`, `left_gripper`, `right_xyz`, `right_qwxyz`, `right_gripper`. Privileged `/teacher` values
+are intentionally excluded.
 
 See [docs/data-format.md](docs/data-format.md) for the contract and filtering rules.
 

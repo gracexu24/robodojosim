@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .datasets import DatasetStats, summarize_dataset, write_splits
+from .lerobot_export import export_lerobot
 
 
 @dataclass(frozen=True)
@@ -106,8 +107,15 @@ def run_campaign(
         stats = summarize_dataset(output, profile=profile)
         if target.reached(stats):
             write_splits(output, profile=profile)
+            lerobot_output = export_lerobot(
+                output,
+                output / "lerobot",
+                profile=profile,
+                repo_id=f"robodojosim/bottle-{profile.replace('_', '-')}",
+            )
             state["status"] = "complete"
             state["stats"] = stats.to_dict()
+            state["lerobot_output"] = str(lerobot_output)
             _save_state(state_path, state)
             return stats
         if max_passes is not None and passes_this_run >= max_passes:

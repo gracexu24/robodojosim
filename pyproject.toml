@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.24", "h5py>=3.10", "opencv-python-headless>=4.8,<5"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+lerobot = ["lerobot>=0.4,<0.5"]
 
 [project.scripts]
 robodojosim = "robodojosim.cli:main"

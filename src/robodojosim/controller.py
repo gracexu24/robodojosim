@@ -64,6 +64,8 @@ class ControllerConfig:
     # to need a one-time calibration for the exact X5 gripper asset.
     handover_left_position: tuple[float, float, float] = (-0.025, -0.02, 1.02)
     handover_right_position: tuple[float, float, float] = (0.025, -0.02, 1.02)
+    staged_handoff: bool = True
+    handover_staging_bottle_position: tuple[float, float, float] = (0.025, -0.02, 0.867)
     left_grasp_quaternion: tuple[float, float, float, float] | None = None
     right_grasp_quaternion: tuple[float, float, float, float] | None = None
     left_handover_quaternion: tuple[float, float, float, float] | None = None
@@ -318,41 +320,120 @@ class BottleController:
                 right_handover = Pose(
                     self.config.handover_right_position, self._orientation("right", snapshot, handover=True)
                 )
-                left_handover = Pose(
-                    self.config.handover_left_position, self._orientation("left", snapshot, handover=True)
-                )
                 events.append(self._event(Phase.HANDOVER, poses, grippers, "right", right_handover, label))
-                events.append(self._event(Phase.HANDOVER, poses, grippers, "left", left_handover, label))
-                grippers["left"] = self.config.closed_value
-                events.append(
-                    self._event(
-                        Phase.HANDOVER,
-                        poses,
-                        grippers,
-                        "left",
-                        left_handover,
-                        label,
-                        self.config.gripper_hold_steps,
+                if self.config.staged_handoff:
+                    grippers["right"] = self.config.open_value
+                    events.append(
+                        self._event(
+                            Phase.RELEASE,
+                            poses,
+                            grippers,
+                            "right",
+                            right_handover,
+                            label,
+                            self.config.gripper_hold_steps,
+                        )
                     )
-                )
-                grippers["right"] = self.config.open_value
-                events.append(
-                    self._event(
-                        Phase.RELEASE,
-                        poses,
-                        grippers,
-                        "right",
-                        right_handover,
-                        label,
-                        self.config.gripper_hold_steps,
+                    right_retreat = right_handover.at(
+                        right_handover.position + np.array([0.12, -0.05, self.config.retreat_height])
                     )
-                )
-                right_retreat = right_handover.at(
-                    right_handover.position + np.array([0.12, -0.05, self.config.retreat_height])
-                )
-                events.append(self._event(Phase.RETREAT, poses, grippers, "right", right_retreat, label))
-                left_lift = left_handover.at(left_handover.position + np.array([0.0, 0.0, self.config.lift_height]))
-                events.append(self._event(Phase.LIFT, poses, grippers, "left", left_lift, label))
+                    events.append(self._event(Phase.RETREAT, poses, grippers, "right", right_retreat, label))
+                    left_orientation = self._orientation("left", snapshot)
+                    staged_grasp_position = np.asarray(
+                        self.config.handover_staging_bottle_position, dtype=np.float64
+                    ).copy()
+                    staged_grasp_position[2] += (
+                        self.config.bottle_fallback_half_height + self.config.grasp_clearance
+                        if self.config.grasp_center_offset is None
+                        else self.config.grasp_center_offset
+                    )
+                    staged_grasp_position += np.asarray(
+                        self.config.left_grasp_position_offset, dtype=np.float64
+                    )
+                    staged_grasp = Pose(staged_grasp_position, left_orientation)
+                    staged_pregrasp = staged_grasp.at(
+                        staged_grasp.position + np.array([0.0, 0.0, self.config.approach_height])
+                    )
+                    staged_overhead = Pose(
+                        np.array(
+                            [
+                                poses["left"].position[0],
+                                poses["left"].position[1],
+                                staged_pregrasp.position[2],
+                            ]
+                        ),
+                        left_orientation,
+                    )
+                    events.append(
+                        self._event(Phase.APPROACH, poses, grippers, "left", staged_overhead, label)
+                    )
+                    events.append(
+                        self._event(Phase.APPROACH, poses, grippers, "left", staged_pregrasp, label)
+                    )
+                    events.append(self._event(Phase.GRASP, poses, grippers, "left", staged_grasp, label))
+                    grippers["left"] = self.config.closed_value
+                    events.append(
+                        self._event(
+                            Phase.CLOSE,
+                            poses,
+                            grippers,
+                            "left",
+                            staged_grasp,
+                            label,
+                            self.config.gripper_hold_steps,
+                        )
+                    )
+                    left_lift = staged_grasp.at(
+                        staged_grasp.position + np.array([0.0, 0.0, self.config.lift_height])
+                    )
+                    events.append(
+                        self._event(
+                            Phase.LIFT,
+                            poses,
+                            grippers,
+                            "left",
+                            left_lift,
+                            label,
+                            self.config.lift_hold_steps,
+                        )
+                    )
+                else:
+                    left_handover = Pose(
+                        self.config.handover_left_position, self._orientation("left", snapshot, handover=True)
+                    )
+                    events.append(self._event(Phase.HANDOVER, poses, grippers, "left", left_handover, label))
+                    grippers["left"] = self.config.closed_value
+                    events.append(
+                        self._event(
+                            Phase.HANDOVER,
+                            poses,
+                            grippers,
+                            "left",
+                            left_handover,
+                            label,
+                            self.config.gripper_hold_steps,
+                        )
+                    )
+                    grippers["right"] = self.config.open_value
+                    events.append(
+                        self._event(
+                            Phase.RELEASE,
+                            poses,
+                            grippers,
+                            "right",
+                            right_handover,
+                            label,
+                            self.config.gripper_hold_steps,
+                        )
+                    )
+                    right_retreat = right_handover.at(
+                        right_handover.position + np.array([0.12, -0.05, self.config.retreat_height])
+                    )
+                    events.append(self._event(Phase.RETREAT, poses, grippers, "right", right_retreat, label))
+                    left_lift = left_handover.at(
+                        left_handover.position + np.array([0.0, 0.0, self.config.lift_height])
+                    )
+                    events.append(self._event(Phase.LIFT, poses, grippers, "left", left_lift, label))
                 carrying_arm = "left"
 
             carry_pose = Pose(drop_position, self._orientation(carrying_arm, snapshot))

@@ -60,3 +60,23 @@ On quota completion the runner writes `splits.json`. Policy splits include succe
 include all complete episodes. Both are grouped by original RoboDojo layout seed, so repeated trajectory variants of
 one layout cannot leak across training, validation, and test. The default ratios are 80/10/10 by layout group;
 integer group counts mean episode ratios may differ slightly.
+
+## LeRobot v3 output
+
+After a quota completes, the campaign atomically creates `<campaign>/lerobot`. LeRobot v3 stores low-dimensional
+state/action data in Parquet, camera streams in MP4, and episode/task/schema metadata under `meta/`. The exporter
+uses a 16D Cartesian representation rather than pretending the commanded end-effector poses are measured joints.
+The order is left position (3), left quaternion `qwxyz` (4), left gripper (1), then the same fields for the right
+arm. Teacher phase/object annotations are not exported as policy observations.
+
+The source HDF5 files remain authoritative and immutable. Conversion is built in a hidden partial directory,
+finalized, and renamed into place only after LeRobot closes its Parquet writers. A matching completed export is
+skipped; use `--overwrite` only when intentionally rebuilding after source or schema changes:
+
+```bash
+robodojosim export-lerobot \
+  --dataset /path/to/dataset \
+  --profile world_model \
+  --output /path/to/dataset/lerobot \
+  --overwrite
+```
