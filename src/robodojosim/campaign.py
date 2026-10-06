@@ -90,6 +90,7 @@ def run_campaign(
     target_hours: float = 6.0,
     batch_size: int = 25,
     max_passes: int | None = None,
+    lerobot_env: str | None = "RoboDojoLeRobot",
     dry_run: bool = False,
 ) -> DatasetStats:
     target = campaign_target(profile, target_episodes=target_episodes, target_hours=target_hours)
@@ -107,12 +108,7 @@ def run_campaign(
         stats = summarize_dataset(output, profile=profile)
         if target.reached(stats):
             write_splits(output, profile=profile)
-            lerobot_output = export_lerobot(
-                output,
-                output / "lerobot",
-                profile=profile,
-                repo_id=f"robodojosim/bottle-{profile.replace('_', '-')}",
-            )
+            lerobot_output = _export_campaign_lerobot(output, profile, lerobot_env=lerobot_env)
             state["status"] = "complete"
             state["stats"] = stats.to_dict()
             state["lerobot_output"] = str(lerobot_output)
@@ -179,3 +175,30 @@ def run_campaign(
         if state["no_progress_passes"] >= 3:
             raise RuntimeError("three consecutive passes produced no usable episodes; calibrate before continuing")
         passes_this_run += 1
+
+
+def _export_campaign_lerobot(output: Path, profile: str, *, lerobot_env: str | None) -> Path:
+    destination = output / "lerobot"
+    repo_id = f"robodojosim/bottle-{profile.replace('_', '-')}"
+    if lerobot_env:
+        subprocess.run(
+            [
+                "conda",
+                "run",
+                "-n",
+                lerobot_env,
+                "robodojosim",
+                "export-lerobot",
+                "--dataset",
+                str(output),
+                "--output",
+                str(destination),
+                "--profile",
+                profile,
+                "--repo-id",
+                repo_id,
+            ],
+            check=True,
+        )
+        return destination
+    return export_lerobot(output, destination, profile=profile, repo_id=repo_id)

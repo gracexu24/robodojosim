@@ -182,16 +182,19 @@ When the quota is reached, the campaign writes `splits.json` and automatically c
 successful episodes; world-model export includes every complete interaction. The immutable HDF5 files remain as the
 atomic source data so an interrupted conversion can be safely rerun.
 
-LeRobot is an optional conversion dependency. Install it in the environment used to run the campaign, or convert
-later with the standalone command:
+LeRobot is isolated from Isaac Sim in a CPU-only conversion environment. This avoids changing the simulator's Torch
+or CUDA packages and does not require `sudo`:
 
 ```bash
-python -m pip install -e '.[lerobot]'
-robodojosim export-lerobot \
+bash scripts/setup_lerobot_cpu_env.sh
+conda run -n RoboDojoLeRobot robodojosim export-lerobot \
   --dataset /workspace/datasets/bottle-policy-50 \
   --profile policy \
   --output /workspace/datasets/bottle-policy-50/lerobot
 ```
+
+Campaign completion invokes `RoboDojoLeRobot` by default. Override the name with `--lerobot-env`; pass
+`--lerobot-env ''` only when LeRobot is already installed in the campaign process environment.
 
 Inspect progress at any time:
 

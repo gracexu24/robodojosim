@@ -89,7 +89,8 @@ def test_campaign_targets_and_dry_run(tmp_path, capsys):
 def test_policy_campaign_reaches_exactly_50_successes_and_writes_splits(tmp_path, monkeypatch):
     output = tmp_path / "campaign"
 
-    def fake_export(_dataset, destination, **_kwargs):
+    def fake_export(_dataset, _profile, **_kwargs):
+        destination = output / "lerobot"
         destination.mkdir(parents=True)
         return destination
 
@@ -102,7 +103,7 @@ def test_policy_campaign_reaches_exactly_50_successes_and_writes_splits(tmp_path
             _one_frame_episode(output, offset + layout_seed, layout_seed, profile=profile)
 
     monkeypatch.setattr(campaign_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(campaign_module, "export_lerobot", fake_export)
+    monkeypatch.setattr(campaign_module, "_export_campaign_lerobot", fake_export)
     stats = run_campaign(
         profile="policy",
         xpolicylab=tmp_path / "XPolicyLab",

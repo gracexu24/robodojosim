@@ -112,6 +112,7 @@ def _campaign(args: argparse.Namespace) -> int:
         target_hours=args.target_hours,
         batch_size=args.batch_size,
         max_passes=args.max_passes,
+        lerobot_env=args.lerobot_env or None,
         dry_run=args.dry_run,
     )
     if not args.dry_run:
@@ -196,6 +197,11 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.add_argument("--target-hours", type=float, default=6.0)
     campaign.add_argument("--batch-size", type=int, default=25)
     campaign.add_argument("--max-passes", type=int)
+    campaign.add_argument(
+        "--lerobot-env",
+        default="RoboDojoLeRobot",
+        help="Conda environment for final LeRobot conversion; pass an empty string to use the current environment",
+    )
     campaign.add_argument("--dry-run", action="store_true")
     campaign.set_defaults(func=_campaign)
     layouts = subparsers.add_parser("fix-layouts", help="correct the known 22 kg bottle layout typo")

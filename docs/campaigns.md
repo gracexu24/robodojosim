@@ -74,9 +74,13 @@ finalized, and renamed into place only after LeRobot closes its Parquet writers.
 skipped; use `--overwrite` only when intentionally rebuilding after source or schema changes:
 
 ```bash
-robodojosim export-lerobot \
+conda run -n RoboDojoLeRobot robodojosim export-lerobot \
   --dataset /path/to/dataset \
   --profile world_model \
   --output /path/to/dataset/lerobot \
   --overwrite
 ```
+
+Create the isolated CPU-only converter once with `bash scripts/setup_lerobot_cpu_env.sh`. Campaign completion calls
+that environment by default, keeping LeRobot's Torch dependencies out of Isaac Sim. No CUDA toolkit or driver is
+installed by this setup.
