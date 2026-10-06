@@ -67,10 +67,17 @@ bash scripts/enable_gui_mode.sh /workspace/RoboDojo
 export ROBODOJO_HEADLESS=0
 export OMNI_KIT_ACCEPT_EULA=YES
 export ROBODOJOSIM_EVAL_NUM=1
+# On multi-GPU workstations, select the GPU driving the desktop display.
+# Check it with: nvidia-smi --query-gpu=index,display_active --format=csv,noheader
+export ROBODOJOSIM_ENV_GPU_ID=1
 bash scripts/run_collection.sh \
   /workspace/RoboDojo/XPolicyLab \
   0 RoboDojoPolicy RoboDojo /workspace/datasets/bottle-gui
 ```
+
+`ROBODOJOSIM_ENV_GPU_ID` defaults to `0` for headless runs. A visible GUI needs the renderer GPU to match the GPU
+with `Display Active: Enabled`; otherwise Kit can create an X11 window but repeatedly report that its backbuffers are
+not initialized. `ROBODOJOSIM_POLICY_GPU_ID` independently selects the policy process GPU and also defaults to `0`.
 
 ## 4. Calibrate
 

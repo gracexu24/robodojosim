@@ -119,12 +119,17 @@ Then launch a one-layout calibration run from a terminal on the Ubuntu desktop:
 export OMNI_KIT_ACCEPT_EULA=YES
 export ROBODOJO_HEADLESS=0
 export ROBODOJOSIM_EVAL_NUM=1
+export ROBODOJOSIM_ENV_GPU_ID=1  # GPU attached to the desktop display
 export PATH="$HOME/miniforge3/bin:$PATH"
 
 bash scripts/run_collection.sh \
   /path/to/RoboDojo/XPolicyLab \
   0 RoboDojoPolicy RoboDojo /absolute/path/to/dataset
 ```
+
+On a multi-GPU machine, find the display GPU with
+`nvidia-smi --query-gpu=index,display_active --format=csv,noheader`. The GUI renderer and desktop display must use the
+same GPU. Headless runs keep the default `ROBODOJOSIM_ENV_GPU_ID=0`.
 
 The policy server uses the lightweight `RoboDojoPolicy` environment because current XPolicyLab requires
 `websockets>=14`, while the Isaac Sim environment uses RoboDojo's `websockets==12` compatibility pin.
