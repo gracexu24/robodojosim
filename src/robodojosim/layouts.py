@@ -169,7 +169,7 @@ def configure_training_dustbin(
             bottle["category_idx"] = category_idx
             bottle["default_pos"] = position
             bottle["default_ori"] = list(stable_orientation)
-            bottle["qpos"] = list(stable_orientation)
+            bottle["qpos"] = [1.0, 0.0, 0.0, 0.0]
             bottle["rotate_rand"] = False
             bottle["xlim"] = [slot_x, slot_x]
             bottle["ylim"] = [slot_y, slot_y]

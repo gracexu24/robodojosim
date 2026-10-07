@@ -187,7 +187,7 @@ def test_training_layout_uses_only_upright_graspable_plastic_bottles(tmp_path):
         [-0.4993, 0.5005, -0.5004, -0.4998],
         [0.5001, -0.5, 0.5, 0.4999],
     ]
-    assert [item["qpos"] for item in updated] == [item["default_ori"] for item in updated]
+    assert all(item["qpos"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
     assert all(item["rotate_rand"] is False for item in updated)
 
 
