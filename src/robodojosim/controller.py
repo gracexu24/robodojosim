@@ -52,6 +52,7 @@ class ControllerConfig:
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
     lift_hold_steps: int = 1
+    drop_hold_steps: int = 0
     max_actions: int = 700
     bottle_limit: int | None = None
     bottle_labels: tuple[str, ...] | None = None
@@ -94,6 +95,8 @@ class ControllerConfig:
             raise ValueError("loaded translation steps must be positive")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
+        if self.drop_hold_steps < 0:
+            raise ValueError("drop_hold_steps cannot be negative")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
         if self.bottle_labels is not None and (not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)):
@@ -444,6 +447,18 @@ class BottleController:
 
             carry_pose = Pose(drop_position, self._orientation(carrying_arm, snapshot))
             events.append(self._event(Phase.TRANSIT, poses, grippers, carrying_arm, carry_pose, label))
+            if self.config.drop_hold_steps:
+                events.append(
+                    self._event(
+                        Phase.HOLD,
+                        poses,
+                        grippers,
+                        carrying_arm,
+                        carry_pose,
+                        label,
+                        self.config.drop_hold_steps,
+                    )
+                )
             grippers[carrying_arm] = self.config.open_value
             events.append(
                 self._event(

@@ -225,3 +225,15 @@ def test_arm_specific_drop_position_offsets_are_applied():
     np.testing.assert_allclose(transit_targets["bottle3"][:2], dustbin[:2] + [0.12, -0.01])
     assert transit_targets["bottle0"][2] > dustbin[2]
     assert transit_targets["bottle3"][2] > dustbin[2]
+
+
+def test_drop_hold_settles_with_closed_gripper_before_release():
+    controller = BottleController(
+        ControllerConfig(bottle_limit=1, direct_right_drop=True, drop_hold_steps=4)
+    )
+    controller.reset(MockBottleEnv(seed=0).snapshot())
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    release_index = next(i for i, step in enumerate(planned) if step.phase is Phase.RELEASE)
+    hold = planned[release_index - 4 : release_index]
+    assert [step.phase for step in hold] == [Phase.HOLD] * 4
+    assert all(float(step.action["left_ee_joint_state"][0]) == 0.0 for step in hold)
