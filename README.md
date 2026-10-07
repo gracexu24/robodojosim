@@ -10,7 +10,7 @@ Ubuntu + NVIDIA machine.
 ## What is included
 
 - A deterministic, safety-bounded Cartesian state machine.
-- Direct per-arm pickups into a centered training dustbin, plus an experimental configurable handoff path.
+- Direct per-arm pickups into a shared tabletop training dustbin, plus an experimental configurable handoff path.
 - EE-pose actions in RoboDojo's `[x, y, z, qw, qx, qy, qz]` convention.
 - Normalized gripper control (`1.0` open, `0.0` closed).
 - Simulator-only scene extraction for the four bottle poses and dustbin pose.
@@ -24,8 +24,8 @@ Ubuntu + NVIDIA machine.
 - A ready-to-install `bottle_scripted` XPolicyLab adapter and Ubuntu helper scripts.
 - An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
   metadata value of `0.22 kg`), with original JSON backups.
-- An explicit, reversible training-layout transform that moves the far-left dustbin to `x=0`, inside both arms'
-  measured top-down workspaces.
+- An explicit, reversible training-layout transform that turns the far-left floor bin into a half-height tabletop
+  receptacle at `[x=0, y=0.30]`, inside both arms' measured top-down workspaces.
 
 The controller uses privileged object poses only as a scripted teacher. Those poses are stored separately under
 `/teacher`; policy observations remain the normal camera and robot state. This data is suitable for imitation
@@ -49,7 +49,7 @@ Cartesian steps to 3.5 cm, rejects targets outside the configured workspace, and
 700-action limit. The sequence is:
 
 ```text
-approach -> descend -> close -> lift -> above centered bin -> open -> retreat -> home
+approach -> descend -> close -> lift -> above shared tabletop bin -> open -> retreat -> home
 ```
 
 The bottle task grants full success only after all four bottles are in the bin, both grippers are open, and both
@@ -105,10 +105,11 @@ XPolicyLab/policy/bottle_scripted/eval.sh \
   RoboDojo put_bottles_into_dustbin scripted arx_x5 ee 0 0 0 RoboDojo RoboDojo
 ```
 
-Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22` and moves only this
-task's dustbin from its public `x=-0.63` position to `x=0`. The original JSON is retained as
-`*.robodojosim-original`. This centered-bin variant is intentional training-environment design: the measured
-top-down workspaces have a central gap, so the public far-left bin requires an unreliable cross-arm handoff. Set
+Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22` and converts only
+this task's public floor bin into a half-height, full-opening receptacle fixed at the rear of the tabletop. The
+original JSON is retained as `*.robodojosim-original`. This tabletop-bin variant is intentional training-environment
+design: the measured top-down workspaces have a central gap, so the public far-left bin requires an unreliable
+cross-arm handoff, while a full-size bin at the center intersects the table. Set
 `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` to preserve the public layout, or `ROBODOJOSIM_FIX_BOTTLE_MASS=0` to reproduce the
 uncorrected mass bug.
 
@@ -214,7 +215,7 @@ Tune [configs/bottle_task.json](configs/bottle_task.json), in this order:
 
 1. Grasp quaternion for each arm.
 2. Grasp clearance and approach/lift heights.
-3. Direct drop clearance for each arm in the centered dustbin.
+3. Direct drop clearance for each arm in the shared tabletop dustbin.
 4. Dustbin drop clearance.
 
 Defaults use each arm's episode-start orientation. That is collision-safe for software testing but may not be the

@@ -18,7 +18,7 @@ Keep the repositories in this shape:
 
 Complete the official RoboDojo asset/config validation before adding this controller. A missing robot, bottle,
 dustbin, or layout asset cannot be diagnosed from the controller layer. Production collection uses the explicit
-centered-dustbin training variant; set `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` only when reproducing the public layout.
+tabletop-dustbin training variant; set `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` only when reproducing the public layout.
 
 ## 2. Install the adapter
 
@@ -122,7 +122,7 @@ Before training:
 - Validate every HDF5 file.
 - Filter manifest entries to `success=true`.
 - Check action/state lengths match and no values are NaN/Inf.
-- Review videos or sampled RGB sequences for left/right grasp and centered-bin drop quality.
+- Review videos or sampled RGB sequences for left/right grasp and tabletop-bin drop quality.
 - Split by seed, not by individual frames.
 - Keep the calibrated config and upstream commit hashes with the dataset.
 - Confirm `splits.json` keeps every repeat of a layout in one split.
@@ -135,7 +135,7 @@ Before training:
 | IK does not move an arm | pose/orientation unreachable | reduce approach height or calibrate quaternion |
 | Fingers close above bottle | grasp target too high | lower `grasp_clearance` |
 | Bottle collides during transit | lift too low | raise `lift_height` |
-| Right bottle cannot reach bin | public far-left layout is active | enable the default centered-dustbin transform |
+| Right bottle cannot reach bin | public far-left layout is active | enable the default tabletop-dustbin transform |
 | Bottle hits bin rim | drop target too low | raise `drop_clearance` |
 | Objects placed but task not complete | arms not home or gripper not open | inspect final EE/gripper state and reward checks |
 | `ModuleNotFoundError: robodojosim` | overlay not installed in eval env | rerun installer with the RoboDojo env name |

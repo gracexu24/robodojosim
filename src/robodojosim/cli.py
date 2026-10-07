@@ -131,7 +131,7 @@ def _fix_layouts(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "mass_layouts": len(changed),
-                "centralized_dustbin_layouts": len(dustbins),
+                "training_dustbin_layouts": len(dustbins),
                 "dry_run": args.dry_run,
             },
             indent=2,
@@ -220,7 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.set_defaults(func=_campaign)
     layouts = subparsers.add_parser("fix-layouts", help="correct the known 22 kg bottle layout typo")
     layouts.add_argument("--robodojo-root", required=True)
-    layouts.add_argument("--centralize-dustbin", action="store_true")
+    layouts.add_argument(
+        "--centralize-dustbin",
+        action="store_true",
+        help="install the shared tabletop training-bin variant (legacy flag name)",
+    )
     layouts.add_argument("--dustbin-x", type=float, default=0.0)
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)

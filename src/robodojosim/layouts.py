@@ -63,16 +63,28 @@ def normalize_bottle_mass(robodojo_root: str | Path, *, dry_run: bool = False) -
     return changed
 
 
-def centralize_dustbin(
-    robodojo_root: str | Path, *, target_x: float = 0.0, dry_run: bool = False
+def configure_training_dustbin(
+    robodojo_root: str | Path,
+    *,
+    target_x: float = 0.0,
+    target_y: float = 0.30,
+    height_scale: float = 0.5,
+    dry_run: bool = False,
 ) -> list[Path]:
-    """Move the bottle-task dustbin into both X5 arms' reachable workspace.
+    """Create a shared, collision-free tabletop receptacle for both X5 arms.
 
-    The public layout places the bin at x=-0.63, outside the right arm's
-    top-down workspace. Training campaigns use x=0 so each arm can complete a
-    direct pick-and-place without an unreachable mid-air handoff. Only dustbin
-    entries still at the public x=-0.63 position are changed.
+    The public layout's 47 cm-wide floor bin sits at x=-0.63, outside the
+    right arm's measured top-down workspace. Merely moving that full-height
+    bin to x=0 intersects the table. The training variant therefore preserves
+    the bin's full opening, halves only its height, and fixes its base to the
+    rear of the tabletop. Original JSON is backed up by :func:`_write_layout`.
+
+    This also recognizes the short-lived x=0 floor-bin transform so machines
+    updated by an older robodojosim revision are migrated safely.
     """
+
+    if height_scale <= 0:
+        raise ValueError("height_scale must be positive")
 
     root = Path(robodojo_root).expanduser().resolve()
     changed: list[Path] = []
@@ -85,16 +97,35 @@ def centralize_dustbin(
             for item in dustbins
             if item.get("category_idx") == 0
             and item.get("label") == "dustbin"
-            and item.get("default_pos", [None])[0] == -0.63
+            and item.get("relative_plane", "Ground").lower() == "ground"
+            and item.get("default_pos", [None])[0] in (-0.63, float(target_x))
         ]
         if not matches:
             continue
         changed.append(path)
         if dry_run:
             continue
+        table = data.get("Table", {})
+        table_pos = table.get("default_pos", [0.0, 0.0, 0.74])
+        table_scale = table.get("scale", [1.0, 1.0, 0.05])
+        table_top = float(table_pos[2]) + float(table_scale[2]) / 2.0
+        # Asset metadata reports a 0.65 m total height around its origin.
+        bin_center_z = table_top + 0.325 * float(height_scale)
         for dustbin in matches:
-            dustbin["default_pos"][0] = float(target_x)
-            if dustbin.get("xlim") == [-0.63, -0.63]:
-                dustbin["xlim"] = [float(target_x), float(target_x)]
+            dustbin["default_pos"] = [float(target_x), float(target_y), bin_center_z]
+            dustbin["xlim"] = [float(target_x), float(target_x)]
+            dustbin["ylim"] = [float(target_y), float(target_y)]
+            dustbin["zlim"] = [bin_center_z, bin_center_z]
+            dustbin["relative_plane"] = "Table"
+            dustbin["scale"] = [1.0, 1.0, float(height_scale)]
+            dustbin.setdefault("physics", {})["collision"] = True
         _write_layout(resolved, data)
     return changed
+
+
+def centralize_dustbin(
+    robodojo_root: str | Path, *, target_x: float = 0.0, dry_run: bool = False
+) -> list[Path]:
+    """Backward-compatible name for the tabletop training-bin transform."""
+
+    return configure_training_dustbin(robodojo_root, target_x=target_x, dry_run=dry_run)
