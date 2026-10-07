@@ -1,0 +1,33 @@
+diff --git a/env/observation_manager/obs_manager.py b/env/observation_manager/obs_manager.py
+--- a/env/observation_manager/obs_manager.py
++++ b/env/observation_manager/obs_manager.py
+@@ -1,6 +1,7 @@
+ from copy import deepcopy
++import os
+ from typing import List
+ 
+ import numpy as np
+ 
+ from env.description_manager.desc_manager import DescManager
+@@ -81,6 +82,8 @@ class ObsManager:
+ 
+         Call this instead of a bare ``env.render()`` right before ``get_obs``.
+         """
++        if os.environ.get("ROBODOJOSIM_CALIBRATION_FAST") == "1":
++            return
+         from env.camera_manager.capture.render_sync import wait_for_latest_cameras
+ 
+         wait_for_latest_cameras(
+@@ -106,7 +109,11 @@ class ObsManager:
+                 "frequency": self.collect_freq,
+             }
+             obs[env_idx]["instruction"] = self.instruction[env_idx]
+-        if self.camera_manager is not None and self.capture_manager is not None:
++        if (
++            os.environ.get("ROBODOJOSIM_CALIBRATION_FAST") != "1"
++            and self.camera_manager is not None
++            and self.capture_manager is not None
++        ):
+             try:
+                 data = self.capture_manager.step(env_ids=env_idx_list)
+                 for ith in range(self.camera_manager.num_cams):
