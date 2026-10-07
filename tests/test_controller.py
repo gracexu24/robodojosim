@@ -348,3 +348,21 @@ def test_home_hold_repeats_final_pose_for_controller_settling():
     final = planned[-8:]
     assert all(step.phase is Phase.HOME and step.active_arm == "right" for step in final)
     assert all(np.array_equal(step.action["right_ee_pose"], final[-1].action["right_ee_pose"]) for step in final)
+
+
+def test_home_completion_hover_stays_within_reward_tolerance():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle3",),
+            direct_right_drop=True,
+            home_completion_height_offset=0.10,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    final = planned[-1].action["right_ee_pose"]
+    expected = snapshot.arms["right"].as_array()
+    np.testing.assert_allclose(final[:2], expected[:2])
+    assert final[2] == pytest.approx(expected[2] + 0.10)
+    np.testing.assert_allclose(final[3:], expected[3:])

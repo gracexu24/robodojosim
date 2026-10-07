@@ -55,6 +55,7 @@ class ControllerConfig:
     drop_hold_steps: int = 0
     home_hold_steps: int = 1
     home_clearance_height: float = 0.15
+    home_completion_height_offset: float = 0.0
     max_actions: int = 700
     bottle_limit: int | None = None
     bottle_labels: tuple[str, ...] | None = None
@@ -102,6 +103,8 @@ class ControllerConfig:
             raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
         if self.home_clearance_height <= 0:
             raise ValueError("home_clearance_height must be positive")
+        if not 0 <= self.home_completion_height_offset < 0.15:
+            raise ValueError("home_completion_height_offset must stay within RoboDojo's 0.15 m origin tolerance")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
         if self.bottle_labels is not None and (
@@ -468,10 +471,10 @@ class BottleController:
             retreat = carry_pose.at(carry_pose.position + np.array([0.0, 0.0, self.config.retreat_height]))
             events.append(self._event(Phase.RETREAT, poses, grippers, carrying_arm, retreat, label))
 
-        # Full reward requires both grippers open and both arms back at their
-        # exact episode-start poses. Return through a high waypoint: a direct
-        # diagonal move from the bin can sweep the long X5 fingers through an
-        # object that was just released successfully.
+        # Full reward requires both grippers open and both arms within 15 cm
+        # and 20 degrees of their episode-start poses. Return through a high
+        # waypoint: a direct diagonal move from the bin can sweep the long X5
+        # fingers through an object that was just released successfully.
         for arm in ("left", "right"):
             grippers[arm] = self.config.open_value
             current_pose = poses[arm]
@@ -490,6 +493,9 @@ class BottleController:
                 np.array([home_pose.position[0], home_pose.position[1], clearance]),
                 home_pose.quaternion,
             )
+            home_target = home_pose.at(
+                home_pose.position + np.array([0.0, 0.0, self.config.home_completion_height_offset])
+            )
             events.append(self._event(Phase.HOME, poses, grippers, arm, raised, None))
             events.append(self._event(Phase.HOME, poses, grippers, arm, home_overhead, None))
             events.append(
@@ -498,7 +504,7 @@ class BottleController:
                     poses,
                     grippers,
                     arm,
-                    self._home[arm],
+                    home_target,
                     None,
                     self.config.home_hold_steps,
                 )

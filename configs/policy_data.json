@@ -20,6 +20,7 @@
   "lift_hold_steps": 5,
   "drop_hold_steps": 3,
   "home_hold_steps": 5,
+  "home_completion_height_offset": 0.10,
   "max_actions": 700,
   "workspace_min": [-0.85, -0.55, 0.30],
   "workspace_max": [0.75, 0.40, 1.35],

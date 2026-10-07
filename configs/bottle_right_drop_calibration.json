@@ -20,6 +20,7 @@
   "lift_hold_steps": 8,
   "drop_hold_steps": 8,
   "home_hold_steps": 8,
+  "home_completion_height_offset": 0.10,
   "max_actions": 380,
   "bottle_labels": ["bottle3"],
   "workspace_min": [-0.85, -0.55, 0.30],
