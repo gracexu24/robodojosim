@@ -73,15 +73,15 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Geometry"]["dustbin"][0]["ylim"] == [-0.1, -0.1]
     assert updated["Geometry"]["dustbin"][0]["zlim"] == [0.83, 0.83]
     assert updated["Geometry"]["dustbin"][0]["relative_plane"] == "Table"
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.6, 0.2]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.4, 0.2]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
-    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.25, 0.155556]
+    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.25, 0.093333]
     assert updated["Rigid"]["bottle"][0]["xlim"] == [0.05, 0.45]
-    assert updated["Rigid"]["bottle"][0]["ylim"] == [0.1, 0.2]
-    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.15, 0.155556]
+    assert updated["Rigid"]["bottle"][0]["ylim"] == [0.06, 0.12]
+    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.15, 0.093333]
     assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, 0.05]
-    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.1, 0.2]
+    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.06, 0.12]
     assert centralize_dustbin(tmp_path) == []
 
 
@@ -139,7 +139,7 @@ def test_training_dustbin_migrates_old_half_height_tabletop_variant(tmp_path):
 
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.6, 0.2]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.4, 0.2]
     assert centralize_dustbin(tmp_path) == []
 
 
@@ -154,8 +154,8 @@ def test_training_dustbin_restores_outer_x_lane_and_moves_it_rearward(tmp_path):
                     "bottle": [
                         {
                             "xlim": [0.30, 0.48],
-                            "ylim": [-0.25, 0.02],
-                            "default_pos": [0.39, -0.10, 0.86],
+                            "ylim": [0.10, 0.20],
+                            "default_pos": [0.39, 0.155556, 0.86],
                         }
                     ]
                 },
@@ -179,7 +179,7 @@ def test_training_dustbin_restores_outer_x_lane_and_moves_it_rearward(tmp_path):
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
     bottle = updated["Rigid"]["bottle"][0]
-    assert bottle["default_pos"][:2] == [0.25, 0.155556]
+    assert bottle["default_pos"][:2] == [0.25, 0.093334]
     assert bottle["xlim"] == [0.05, 0.45]
-    assert bottle["ylim"] == [0.1, 0.2]
+    assert bottle["ylim"] == [0.06, 0.12]
     assert centralize_dustbin(tmp_path) == []

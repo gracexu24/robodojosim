@@ -69,7 +69,7 @@ def configure_training_dustbin(
     target_x: float = 0.0,
     target_y: float = -0.10,
     width_scale: float = 1.0,
-    depth_scale: float = 0.6,
+    depth_scale: float = 0.4,
     height_scale: float = 0.2,
     dry_run: bool = False,
 ) -> list[Path]:
@@ -99,7 +99,7 @@ def configure_training_dustbin(
         bottles = data.get("Rigid", {}).get("bottle", [])
         needs_bottle_relayout = any(
             bottle.get("xlim") in ([0.30, 0.48], [-0.38, -0.30])
-            or bottle.get("ylim") == [-0.25, 0.02]
+            or bottle.get("ylim") in ([-0.25, 0.02], [0.10, 0.20])
             for bottle in bottles
         )
         dustbins = data.get("Geometry", {}).get("dustbin", [])
@@ -115,7 +115,7 @@ def configure_training_dustbin(
                 plane == "table"
                 and position[0] == float(target_x)
                 and position[1] in (0.30, float(target_y))
-                and scale in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2])
+                and scale in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2], [1.0, 0.6, 0.2])
             )
             desired_bin_needs_bottle_migration = (
                 plane == "table"
@@ -160,8 +160,12 @@ def configure_training_dustbin(
                 bottle["xlim"] = [-0.35, 0.05]
             if ylim == [-0.25, 0.02]:
                 fraction = (float(position[1]) + 0.25) / 0.27
-                position[1] = round(0.10 + 0.10 * fraction, 6)
-                bottle["ylim"] = [0.10, 0.20]
+                position[1] = round(0.06 + 0.06 * fraction, 6)
+                bottle["ylim"] = [0.06, 0.12]
+            elif ylim == [0.10, 0.20]:
+                fraction = (float(position[1]) - 0.10) / 0.10
+                position[1] = round(0.06 + 0.06 * fraction, 6)
+                bottle["ylim"] = [0.06, 0.12]
         _write_layout(resolved, data)
     return changed
 
