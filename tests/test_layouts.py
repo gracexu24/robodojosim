@@ -35,8 +35,8 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     data = {
         "Rigid": {
             "bottle": [
-                {"xlim": [0.05, 0.45], "default_pos": [0.25, -0.1, 0.86]},
-                {"xlim": [-0.35, 0.05], "default_pos": [-0.15, -0.1, 0.86]},
+                {"xlim": [0.05, 0.45], "ylim": [-0.25, 0.02], "default_pos": [0.25, -0.1, 0.86]},
+                {"xlim": [-0.35, 0.05], "ylim": [-0.25, 0.02], "default_pos": [-0.15, -0.1, 0.86]},
             ]
         },
         "Geometry": {
@@ -76,10 +76,12 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.6, 0.2]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
-    assert updated["Rigid"]["bottle"][0]["default_pos"][0] == 0.39
-    assert updated["Rigid"]["bottle"][0]["xlim"] == [0.3, 0.48]
-    assert updated["Rigid"]["bottle"][1]["default_pos"][0] == -0.34
-    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.38, -0.3]
+    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.25, 0.155556]
+    assert updated["Rigid"]["bottle"][0]["xlim"] == [0.05, 0.45]
+    assert updated["Rigid"]["bottle"][0]["ylim"] == [0.1, 0.2]
+    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.15, 0.155556]
+    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, 0.05]
+    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.1, 0.2]
     assert centralize_dustbin(tmp_path) == []
 
 
@@ -138,4 +140,46 @@ def test_training_dustbin_migrates_old_half_height_tabletop_variant(tmp_path):
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
     assert updated["Geometry"]["dustbin"][0]["scale"] == [1.0, 0.6, 0.2]
+    assert centralize_dustbin(tmp_path) == []
+
+
+def test_training_dustbin_restores_outer_x_lane_and_moves_it_rearward(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    path = layout_dir / "put_bottles_into_dustbin_0.json"
+    path.write_text(
+        json.dumps(
+            {
+                "Rigid": {
+                    "bottle": [
+                        {
+                            "xlim": [0.30, 0.48],
+                            "ylim": [-0.25, 0.02],
+                            "default_pos": [0.39, -0.10, 0.86],
+                        }
+                    ]
+                },
+                "Geometry": {
+                    "dustbin": [
+                        {
+                            "category_idx": 0,
+                            "label": "dustbin",
+                            "relative_plane": "Table",
+                            "scale": [1.0, 0.6, 0.2],
+                            "default_pos": [0.0, -0.1, 0.83],
+                        }
+                    ]
+                },
+                "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert centralize_dustbin(tmp_path) == [path]
+    updated = json.loads(path.read_text(encoding="utf-8"))
+    bottle = updated["Rigid"]["bottle"][0]
+    assert bottle["default_pos"][:2] == [0.25, 0.155556]
+    assert bottle["xlim"] == [0.05, 0.45]
+    assert bottle["ylim"] == [0.1, 0.2]
     assert centralize_dustbin(tmp_path) == []

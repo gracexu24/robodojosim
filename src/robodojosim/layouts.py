@@ -79,8 +79,9 @@ def configure_training_dustbin(
     right arm's measured top-down workspace. Merely moving that full-height
     bin to x=0 intersects the table. The training variant preserves the full
     left/right opening, reduces its depth and height, and fixes its base at the
-    measured shared reachable point (x=0, y=-0.10). Bottles are moved into
-    collision-free outer x lanes. Original JSON is backed up by
+    measured shared reachable point (x=0, y=-0.10). Bottles keep their
+    calibrated x positions and move into a collision-free rear y lane.
+    Original JSON is backed up by
     :func:`_write_layout`.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
@@ -95,6 +96,12 @@ def configure_training_dustbin(
     for resolved, path in sorted(_layout_candidates(root).items(), key=lambda item: str(item[0])):
         with resolved.open(encoding="utf-8") as handle:
             data = json.load(handle)
+        bottles = data.get("Rigid", {}).get("bottle", [])
+        needs_bottle_relayout = any(
+            bottle.get("xlim") in ([0.30, 0.48], [-0.38, -0.30])
+            or bottle.get("ylim") == [-0.25, 0.02]
+            for bottle in bottles
+        )
         dustbins = data.get("Geometry", {}).get("dustbin", [])
         matches = []
         for item in dustbins:
@@ -110,7 +117,13 @@ def configure_training_dustbin(
                 and position[1] in (0.30, float(target_y))
                 and scale in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2])
             )
-            if public_or_floor_center or old_tabletop_variant:
+            desired_bin_needs_bottle_migration = (
+                plane == "table"
+                and position[:2] == [float(target_x), float(target_y)]
+                and scale == [float(width_scale), float(depth_scale), float(height_scale)]
+                and needs_bottle_relayout
+            )
+            if public_or_floor_center or old_tabletop_variant or desired_bin_needs_bottle_migration:
                 matches.append(item)
         if not matches:
             continue
@@ -131,19 +144,24 @@ def configure_training_dustbin(
             dustbin["relative_plane"] = "Table"
             dustbin["scale"] = [float(width_scale), float(depth_scale), float(height_scale)]
             dustbin.setdefault("physics", {})["collision"] = True
-        for bottle in data.get("Rigid", {}).get("bottle", []):
+        for bottle in bottles:
             xlim = bottle.get("xlim")
+            ylim = bottle.get("ylim")
             position = bottle.get("default_pos")
-            if not isinstance(position, list) or not position:
+            if not isinstance(position, list) or len(position) < 2:
                 continue
-            if xlim == [0.05, 0.45]:
-                fraction = (float(position[0]) - 0.05) / 0.40
-                position[0] = round(0.30 + 0.18 * fraction, 6)
-                bottle["xlim"] = [0.30, 0.48]
-            elif xlim == [-0.35, 0.05]:
-                fraction = (float(position[0]) + 0.35) / 0.40
-                position[0] = round(-0.38 + 0.08 * fraction, 6)
-                bottle["xlim"] = [-0.38, -0.30]
+            if xlim == [0.30, 0.48]:
+                fraction = (float(position[0]) - 0.30) / 0.18
+                position[0] = round(0.05 + 0.40 * fraction, 6)
+                bottle["xlim"] = [0.05, 0.45]
+            elif xlim == [-0.38, -0.30]:
+                fraction = (float(position[0]) + 0.38) / 0.08
+                position[0] = round(-0.35 + 0.40 * fraction, 6)
+                bottle["xlim"] = [-0.35, 0.05]
+            if ylim == [-0.25, 0.02]:
+                fraction = (float(position[1]) + 0.25) / 0.27
+                position[1] = round(0.10 + 0.10 * fraction, 6)
+                bottle["ylim"] = [0.10, 0.20]
         _write_layout(resolved, data)
     return changed
 
