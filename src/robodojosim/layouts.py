@@ -71,18 +71,22 @@ def configure_training_dustbin(
     target_y: float = -0.10,
     width_scale: float = 0.8,
     depth_scale: float = 0.6,
-    height_scale: float = 0.05,
+    height_scale: float = 0.45,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
 
     The public layout's 47 cm-wide floor bin sits at x=-0.63, outside the
     right arm's measured top-down workspace. Merely moving that full-height
-    bin to x=0 intersects the table. The training variant reduces the bin to a
-    shallow central receptacle at the measured shared reachable point
+    bin to x=0 intersects the table. The training variant reduces and raises
+    the bin onto the table at the measured shared reachable point
     (x=0, y=-0.10). Bottles keep their calibrated y positions and are remapped
     only far enough outward in x to avoid the receptacle footprint. Original
     JSON is backed up by :func:`_write_layout`.
+
+    The 0.45 height scale is deliberate: RoboDojo's reward requires the
+    bottle's complete 3D bounding box to fit inside the dustbin bounding box.
+    A shallow tray can look correct but can never satisfy that predicate.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.
