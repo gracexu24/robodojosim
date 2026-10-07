@@ -491,7 +491,7 @@ class BottleController:
             )
             home_overhead = Pose(
                 np.array([home_pose.position[0], home_pose.position[1], clearance]),
-                home_pose.quaternion,
+                current_pose.quaternion,
             )
             home_target = home_pose.at(
                 home_pose.position + np.array([0.0, 0.0, self.config.home_completion_height_offset])

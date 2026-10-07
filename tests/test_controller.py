@@ -320,7 +320,7 @@ def test_home_path_raises_clear_of_bin_before_crossing_table():
     planned = [controller.next_action() for _ in range(controller.planned_action_count)]
     last_retreat = max(i for i, step in enumerate(planned) if step.phase is Phase.RETREAT)
     right_home = [
-        step.action["right_ee_pose"][:3]
+        step.action["right_ee_pose"]
         for step in planned[last_retreat + 1 :]
         if step.phase is Phase.HOME and step.active_arm == "right"
     ]
@@ -332,6 +332,7 @@ def test_home_path_raises_clear_of_bin_before_crossing_table():
     home_xy = snapshot.arms["right"].position[:2]
     overhead = next(position for position in right_home if np.linalg.norm(position[:2] - home_xy) < 1e-6)
     assert overhead[2] > snapshot.arms["right"].position[2] + 0.1
+    np.testing.assert_allclose(overhead[3:], planned[last_retreat].action["right_ee_pose"][3:])
 
 
 def test_home_hold_repeats_final_pose_for_controller_settling():
