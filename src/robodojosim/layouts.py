@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -94,9 +95,12 @@ def configure_training_dustbin(
     changed: list[Path] = []
     for resolved, path in sorted(_layout_candidates(root).items(), key=lambda item: str(item[0])):
         with resolved.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-        if data.get("robodojosim", {}).get("training_layout_version") == 1:
-            continue
+            original_data = json.load(handle)
+        data = deepcopy(original_data)
+        # A short-lived revision wrote this marker at the top level. RoboDojo
+        # treats every top-level mapping as a scene-object group, so remove it
+        # and rely on comparing the normalized JSON for idempotence instead.
+        data.pop("robodojosim", None)
         bottles = data.get("Rigid", {}).get("bottle", [])
         dustbins = data.get("Geometry", {}).get("dustbin", [])
         matches = [
@@ -105,9 +109,6 @@ def configure_training_dustbin(
             if item.get("category_idx") == 0 and item.get("label") == "dustbin"
         ]
         if not matches:
-            continue
-        changed.append(path)
-        if dry_run:
             continue
         table = data.get("Table", {})
         table_pos = table.get("default_pos", [0.0, 0.0, 0.74])
@@ -135,19 +136,19 @@ def configure_training_dustbin(
                 continue
             xlim = source.get("xlim")
             ylim = source.get("ylim")
-            if not backup.exists() and xlim == [0.30, 0.48]:
+            if xlim == [0.30, 0.48]:
                 fraction = (float(position[0]) - 0.30) / 0.18
                 position[0] = round(0.05 + 0.40 * fraction, 6)
                 xlim = [0.05, 0.45]
-            elif not backup.exists() and xlim == [-0.38, -0.30]:
+            elif xlim == [-0.38, -0.30]:
                 fraction = (float(position[0]) + 0.38) / 0.08
                 position[0] = round(-0.35 + 0.40 * fraction, 6)
                 xlim = [-0.35, 0.05]
-            if not backup.exists() and ylim == [0.10, 0.20]:
+            if ylim == [0.10, 0.20]:
                 fraction = (float(position[1]) - 0.10) / 0.10
                 position[1] = round(-0.25 + 0.27 * fraction, 6)
                 ylim = [-0.25, 0.02]
-            elif not backup.exists() and ylim == [0.06, 0.12]:
+            elif ylim == [0.06, 0.12]:
                 fraction = (float(position[1]) - 0.06) / 0.06
                 position[1] = round(-0.25 + 0.27 * fraction, 6)
                 ylim = [-0.25, 0.02]
@@ -160,7 +161,11 @@ def configure_training_dustbin(
                 bottle["xlim"] = xlim
             if ylim is not None:
                 bottle["ylim"] = ylim
-        data["robodojosim"] = {"training_layout_version": 1}
+        if data == original_data:
+            continue
+        changed.append(path)
+        if dry_run:
+            continue
         _write_layout(resolved, data)
     return changed
 

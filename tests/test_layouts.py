@@ -82,8 +82,42 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.29, -0.1]
     assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, 0.05]
     assert updated["Rigid"]["bottle"][1]["ylim"] == [-0.25, 0.02]
-    assert updated["robodojosim"]["training_layout_version"] == 1
+    assert "robodojosim" not in updated
     assert centralize_dustbin(tmp_path) == []
+
+
+def test_training_dustbin_removes_legacy_top_level_marker(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    path = layout_dir / "put_bottles_into_dustbin_0.json"
+    path.write_text(
+        json.dumps(
+            {
+                "Geometry": {
+                    "dustbin": [
+                        {
+                            "category_idx": 0,
+                            "label": "dustbin",
+                            "xlim": [0.0, 0.0],
+                            "ylim": [-0.1, -0.1],
+                            "zlim": [0.83, 0.83],
+                            "relative_plane": "Table",
+                            "scale": [0.8, 0.4, 0.2],
+                            "physics": {"collision": True},
+                            "default_pos": [0.0, -0.1, 0.83],
+                        }
+                    ]
+                },
+                "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+                "robodojosim": {"training_layout_version": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert configure_training_dustbin(tmp_path) == [path]
+    assert "robodojosim" not in json.loads(path.read_text(encoding="utf-8"))
+    assert configure_training_dustbin(tmp_path) == []
 
 
 def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
