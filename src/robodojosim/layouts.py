@@ -68,7 +68,7 @@ def configure_training_dustbin(
     *,
     target_x: float = 0.0,
     target_y: float = -0.10,
-    width_scale: float = 1.0,
+    width_scale: float = 0.8,
     depth_scale: float = 0.4,
     height_scale: float = 0.2,
     dry_run: bool = False,
@@ -77,12 +77,11 @@ def configure_training_dustbin(
 
     The public layout's 47 cm-wide floor bin sits at x=-0.63, outside the
     right arm's measured top-down workspace. Merely moving that full-height
-    bin to x=0 intersects the table. The training variant preserves the full
-    left/right opening, reduces its depth and height, and fixes its base at the
-    measured shared reachable point (x=0, y=-0.10). Bottles keep their
-    calibrated x positions and move into a collision-free rear y lane.
-    Original JSON is backed up by
-    :func:`_write_layout`.
+    bin to x=0 intersects the table. The training variant reduces the bin to a
+    shallow central receptacle at the measured shared reachable point
+    (x=0, y=-0.10). Bottles keep their calibrated y positions and are remapped
+    only far enough outward in x to avoid the receptacle footprint. Original
+    JSON is backed up by :func:`_write_layout`.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.
@@ -98,8 +97,8 @@ def configure_training_dustbin(
             data = json.load(handle)
         bottles = data.get("Rigid", {}).get("bottle", [])
         needs_bottle_relayout = any(
-            bottle.get("xlim") in ([0.30, 0.48], [-0.38, -0.30])
-            or bottle.get("ylim") in ([-0.25, 0.02], [0.10, 0.20])
+            bottle.get("xlim") in ([0.05, 0.45], [-0.35, 0.05], [0.30, 0.48], [-0.38, -0.30])
+            or bottle.get("ylim") in ([0.10, 0.20], [0.06, 0.12])
             for bottle in bottles
         )
         dustbins = data.get("Geometry", {}).get("dustbin", [])
@@ -115,7 +114,8 @@ def configure_training_dustbin(
                 plane == "table"
                 and position[0] == float(target_x)
                 and position[1] in (0.30, float(target_y))
-                and scale in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2], [1.0, 0.6, 0.2])
+                and scale
+                in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2], [1.0, 0.6, 0.2], [1.0, 0.4, 0.2])
             )
             desired_bin_needs_bottle_migration = (
                 plane == "table"
@@ -153,19 +153,29 @@ def configure_training_dustbin(
             if xlim == [0.30, 0.48]:
                 fraction = (float(position[0]) - 0.30) / 0.18
                 position[0] = round(0.05 + 0.40 * fraction, 6)
-                bottle["xlim"] = [0.05, 0.45]
+                xlim = [0.05, 0.45]
+                bottle["xlim"] = xlim
             elif xlim == [-0.38, -0.30]:
                 fraction = (float(position[0]) + 0.38) / 0.08
                 position[0] = round(-0.35 + 0.40 * fraction, 6)
-                bottle["xlim"] = [-0.35, 0.05]
-            if ylim == [-0.25, 0.02]:
-                fraction = (float(position[1]) + 0.25) / 0.27
-                position[1] = round(0.06 + 0.06 * fraction, 6)
-                bottle["ylim"] = [0.06, 0.12]
-            elif ylim == [0.10, 0.20]:
+                xlim = [-0.35, 0.05]
+                bottle["xlim"] = xlim
+            if xlim == [0.05, 0.45]:
+                fraction = (float(position[0]) - 0.05) / 0.40
+                position[0] = round(0.24 + 0.21 * fraction, 6)
+                bottle["xlim"] = [0.24, 0.45]
+            elif xlim == [-0.35, 0.05]:
+                fraction = (float(position[0]) + 0.35) / 0.40
+                position[0] = round(-0.37 + 0.08 * fraction, 6)
+                bottle["xlim"] = [-0.37, -0.29]
+            if ylim == [0.10, 0.20]:
                 fraction = (float(position[1]) - 0.10) / 0.10
-                position[1] = round(0.06 + 0.06 * fraction, 6)
-                bottle["ylim"] = [0.06, 0.12]
+                position[1] = round(-0.25 + 0.27 * fraction, 6)
+                bottle["ylim"] = [-0.25, 0.02]
+            elif ylim == [0.06, 0.12]:
+                fraction = (float(position[1]) - 0.06) / 0.06
+                position[1] = round(-0.25 + 0.27 * fraction, 6)
+                bottle["ylim"] = [-0.25, 0.02]
         _write_layout(resolved, data)
     return changed
 
