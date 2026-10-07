@@ -59,6 +59,7 @@ class ControllerConfig:
     home_hold_steps: int = 1
     home_clearance_height: float = 0.15
     home_completion_height_offset: float = 0.0
+    intermediate_home_completion_height_offset: float | None = None
     home_between_bottles: bool = False
     max_actions: int = 700
     bottle_limit: int | None = None
@@ -116,6 +117,12 @@ class ControllerConfig:
             raise ValueError("home_clearance_height must be positive")
         if not 0 <= self.home_completion_height_offset < 0.15:
             raise ValueError("home_completion_height_offset must stay within RoboDojo's 0.15 m origin tolerance")
+        if self.intermediate_home_completion_height_offset is not None and not (
+            0 <= self.intermediate_home_completion_height_offset < 0.15
+        ):
+            raise ValueError(
+                "intermediate_home_completion_height_offset must stay within RoboDojo's 0.15 m origin tolerance"
+            )
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
         if self.grasp_max_center_offset is not None and self.grasp_max_center_offset <= 0:
@@ -275,7 +282,13 @@ class BottleController:
             if self.config.world_model_movements and bottle_index == 0 and rng.random() < self.config.push_probability:
                 self._append_push(events, poses, grippers, bottle_center, orientation, pick_arm, label, rng)
                 if self.config.home_between_bottles:
-                    self._append_home(events, poses, grippers, pick_arm)
+                    self._append_home(
+                        events,
+                        poses,
+                        grippers,
+                        pick_arm,
+                        completion_height_offset=self.config.intermediate_home_completion_height_offset,
+                    )
                 continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle_center.copy()
@@ -505,7 +518,13 @@ class BottleController:
             events.append(self._event(Phase.RETREAT, poses, grippers, carrying_arm, retreat, label))
             if self.config.home_between_bottles:
                 for arm in dict.fromkeys((pick_arm, carrying_arm)):
-                    self._append_home(events, poses, grippers, arm)
+                    self._append_home(
+                        events,
+                        poses,
+                        grippers,
+                        arm,
+                        completion_height_offset=self.config.intermediate_home_completion_height_offset,
+                    )
 
         # Full reward requires both grippers open and both arms within 15 cm
         # and 20 degrees of their episode-start poses. Return through a high
@@ -521,13 +540,17 @@ class BottleController:
         poses: dict[str, Pose],
         grippers: dict[str, float],
         arm: str,
+        completion_height_offset: float | None = None,
     ) -> None:
         grippers[arm] = self.config.open_value
         current_pose = poses[arm]
         home_pose = self._home[arm]
-        home_target = home_pose.at(
-            home_pose.position + np.array([0.0, 0.0, self.config.home_completion_height_offset])
+        height_offset = (
+            self.config.home_completion_height_offset
+            if completion_height_offset is None
+            else completion_height_offset
         )
+        home_target = home_pose.at(home_pose.position + np.array([0.0, 0.0, height_offset]))
         if (
             np.linalg.norm(current_pose.position - home_target.position) < 1e-6
             and abs(float(np.dot(current_pose.quaternion, home_target.quaternion))) > 1.0 - 1e-9

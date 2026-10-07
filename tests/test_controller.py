@@ -429,6 +429,7 @@ def test_home_between_bottles_resets_arm_before_next_approach():
             direct_right_drop=True,
             home_between_bottles=True,
             home_completion_height_offset=0.10,
+            intermediate_home_completion_height_offset=0.0,
         )
     )
     controller.reset(snapshot)
@@ -438,6 +439,8 @@ def test_home_between_bottles_resets_arm_before_next_approach():
     between = planned[first_bottle_end + 1 : second_bottle_start]
     assert between
     assert all(step.phase is Phase.HOME for step in between)
+    final_between = between[-1].action[f"{between[-1].active_arm}_ee_pose"]
+    np.testing.assert_allclose(final_between, snapshot.arms[between[-1].active_arm].as_array())
 
 
 def test_home_specific_step_size_does_not_change_loaded_motion_limits():

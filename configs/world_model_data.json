@@ -25,6 +25,7 @@
   "drop_hold_steps": 8,
   "home_hold_steps": 8,
   "home_completion_height_offset": 0.10,
+  "intermediate_home_completion_height_offset": 0.0,
   "home_between_bottles": true,
   "max_actions": 700,
   "bottle_limit": 2,
