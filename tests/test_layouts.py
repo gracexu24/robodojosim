@@ -150,6 +150,42 @@ def test_training_layout_uses_calibrated_right_bottle_lanes(tmp_path):
     ]
 
 
+def test_training_layout_uses_only_upright_graspable_plastic_bottles(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    path = layout_dir / "put_bottles_into_dustbin_3.json"
+    bottles = [
+        {
+            "category_idx": category,
+            "default_pos": [0.0, 0.0, 0.8],
+            "default_ori": [0.5, 0.5, 0.5, 0.5],
+            "rotate_rand": True,
+            "physics": {"mass": 22.0},
+        }
+        for category in (5, 50, 47, 22)
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "Rigid": {"bottle": bottles},
+                "Geometry": {"dustbin": [{"category_idx": 0, "label": "dustbin"}]},
+                "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    configure_training_dustbin(tmp_path)
+
+    updated = json.loads(path.read_text(encoding="utf-8"))["Rigid"]["bottle"]
+    assert [item["category_idx"] for item in updated] == [55, 0, 2, 25]
+    assert [item["default_pos"][2] for item in updated] == [0.8775, 0.8875, 0.8875, 0.867]
+    assert [item["physics"]["mass"] for item in updated] == [0.15, 0.19, 0.19, 0.15]
+    assert all(item["default_ori"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
+    assert all(item["qpos"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
+    assert all(item["rotate_rand"] is False for item in updated)
+
+
 def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
     layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
     layout_dir.mkdir(parents=True)

@@ -7,6 +7,17 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
+# RoboDojo's ``bottle`` class also contains finger caps, end caps, a soda can,
+# and a metal flask.  These four assets are actual plastic drink bottles with
+# body diameters the X5 gripper can close around.  Heights and masses come from
+# each installed asset's metadata.json.
+_TRAINING_PLASTIC_BOTTLES = (
+    (0, 0.245, 0.19),
+    (2, 0.245, 0.19),
+    (25, 0.204, 0.15),
+    (55, 0.225, 0.15),
+)
+
 
 def _layout_candidates(root: Path) -> dict[Path, Path]:
     layout_roots = (
@@ -81,8 +92,10 @@ def configure_training_dustbin(
     bin to x=0 intersects the table. The training variant reduces and raises
     the bin onto the table at the measured shared reachable point
     (x=0, y=-0.10). The four bottles are placed in collision-separated source
-    slots, two per arm, that leave room for an open gripper. Original
-    JSON is backed up by :func:`_write_layout`.
+    slots, two per arm, that leave room for an open gripper. Mislabeled caps,
+    cans, and metal flasks are deterministically replaced by real plastic
+    drink bottles and placed upright. Original JSON is backed up by
+    :func:`_write_layout`.
 
     The 0.45 height scale is deliberate: RoboDojo's reward requires the
     bottle's complete 3D bounding box to fit inside the dustbin bounding box.
@@ -135,17 +148,30 @@ def configure_training_dustbin(
             (0.38, 0.01),
             (0.38, -0.24),
         )
+        try:
+            layout_index = int(resolved.stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            layout_index = 0
         for index, bottle in enumerate(bottles):
             source = source_bottles[index] if index < len(source_bottles) else bottle
             position = list(source.get("default_pos", bottle.get("default_pos", [])))
-            if not isinstance(position, list) or len(position) < 2:
+            if not isinstance(position, list) or len(position) < 3:
                 continue
             slot_x, slot_y = source_slots[index % len(source_slots)]
+            category_idx, bottle_height, bottle_mass = _TRAINING_PLASTIC_BOTTLES[
+                (layout_index + index) % len(_TRAINING_PLASTIC_BOTTLES)
+            ]
             position[0] = slot_x
             position[1] = slot_y
+            position[2] = round(table_top + bottle_height / 2.0, 6)
+            bottle["category_idx"] = category_idx
             bottle["default_pos"] = position
+            bottle["default_ori"] = [1.0, 0.0, 0.0, 0.0]
+            bottle["qpos"] = [1.0, 0.0, 0.0, 0.0]
+            bottle["rotate_rand"] = False
             bottle["xlim"] = [slot_x, slot_x]
             bottle["ylim"] = [slot_y, slot_y]
+            bottle.setdefault("physics", {})["mass"] = bottle_mass
         if data == original_data:
             continue
         changed.append(path)
