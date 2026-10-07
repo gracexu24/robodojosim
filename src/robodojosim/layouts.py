@@ -70,7 +70,7 @@ def configure_training_dustbin(
     target_x: float = 0.0,
     target_y: float = -0.10,
     width_scale: float = 0.8,
-    depth_scale: float = 0.4,
+    depth_scale: float = 0.6,
     height_scale: float = 0.2,
     dry_run: bool = False,
 ) -> list[Path]:
