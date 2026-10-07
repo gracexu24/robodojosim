@@ -106,7 +106,7 @@ XPolicyLab/policy/bottle_scripted/eval.sh \
 ```
 
 Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22` and converts only
-this task's public floor bin into a 9.75 cm-tall, 51.7 cm-square receptacle at the measured shared reachable point
+this task's public floor bin into a 9.75 cm-tall, 51.7 by 61.1 cm receptacle at the measured shared reachable point
 and places the side-lying bottles in collision-free calibrated lanes. The original JSON is retained as
 `*.robodojosim-original`. This tabletop-bin variant is intentional training-environment design: the measured
 top-down workspaces have a central gap, so the public far-left bin requires an unreliable cross-arm handoff, while a

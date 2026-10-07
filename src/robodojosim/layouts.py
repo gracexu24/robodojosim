@@ -103,7 +103,7 @@ def configure_training_dustbin(
     target_x: float = 0.0,
     target_y: float = -0.10,
     width_scale: float = 1.1,
-    depth_scale: float = 1.1,
+    depth_scale: float = 1.3,
     height_scale: float = 0.15,
     dry_run: bool = False,
 ) -> list[Path]:
