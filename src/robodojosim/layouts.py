@@ -9,33 +9,34 @@ from pathlib import Path
 
 # RoboDojo's ``bottle`` class also contains finger caps, end caps, a soda can,
 # and a metal flask.  These four assets are actual plastic drink bottles with
-# body diameters the X5 gripper can close around.  Center heights and stable
-# placement quaternions are copied from RoboDojo-generated layouts that remain
-# settled in simulation; the asset metadata quaternions use a different frame.
+# body diameters the X5 gripper can close around. Center heights and base
+# placement quaternions come from settled RoboDojo-generated layouts, then a
+# world-Z yaw aligns each side-lying bottle with its source lane. Yaw does not
+# change the support face; the asset metadata quaternions use a different frame.
 _TRAINING_PLASTIC_BOTTLES = (
     (
         0,
         0.0316156924876869,
         0.19,
-        (0.5794581048099863, -0.5302326354153651, 0.46388952753634416, -0.4097415811857554),
+        (0.708743947244993, -0.703574990422769, 0.03636446437136914, 0.03663162330788261),
     ),
     (
         2,
         0.0315050653781365,
         0.19,
-        (0.7054078776241998, -0.7055593122523169, -0.041947295191935983, 0.05316208710952126),
+        (0.7073861017028797, -0.7067829848942587, 0.005597405099145171, 0.0056021815144976575),
     ),
     (
         25,
         0.0318999987239755,
         0.15,
-        (0.6922284984917547, -0.1440945532460404, 0.692269282667391, 0.144290352677685),
+        (0.4999292836443675, -0.4999292836443675, 0.5000707063554409, 0.5000707063554408),
     ),
     (
         55,
         0.0408180747094109,
         0.15,
-        (-0.659441512030497, 0.32933565903259576, -0.6322433619695931, 0.23862784235265624),
+        (-0.6534034475349622, 0.6642001486324338, -0.2589050166020367, -0.2546964657869796),
     ),
 )
 
@@ -101,8 +102,8 @@ def configure_training_dustbin(
     *,
     target_x: float = 0.0,
     target_y: float = -0.10,
-    width_scale: float = 0.65,
-    depth_scale: float = 0.6,
+    width_scale: float = 1.1,
+    depth_scale: float = 1.1,
     height_scale: float = 0.15,
     dry_run: bool = False,
 ) -> list[Path]:
@@ -166,10 +167,10 @@ def configure_training_dustbin(
             with backup.open(encoding="utf-8") as handle:
                 source_bottles = json.load(handle).get("Rigid", {}).get("bottle", bottles)
         source_slots = (
-            (-0.35, -0.17),
+            (-0.35, -0.26),
             (-0.35, 0.01),
             (0.38, 0.01),
-            (0.38, -0.17),
+            (0.38, -0.26),
         )
         try:
             layout_index = int(resolved.stem.rsplit("_", 1)[1])

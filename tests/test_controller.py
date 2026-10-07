@@ -406,6 +406,35 @@ def test_arm_specific_drop_position_offsets_are_applied():
     assert transit_targets["bottle3"][2] > dustbin[2]
 
 
+def test_bottles_receive_distinct_drop_slots_and_keep_aligned_yaw():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            direct_right_drop=True,
+            align_grasp_to_bbox_major_axis=True,
+            drop_slot_offsets=((-0.12, -0.125), (-0.12, 0.125), (0.12, 0.125), (0.12, -0.125)),
+        )
+    )
+    controller.reset(snapshot)
+    transit_targets = {}
+    grasp_orientations = {}
+    while not controller.done:
+        step = controller.next_action()
+        key = f"{step.active_arm}_ee_pose"
+        if step.phase is Phase.GRASP:
+            grasp_orientations[step.bottle] = step.action[key][3:]
+        if step.phase is Phase.TRANSIT:
+            transit_targets[step.bottle] = step.action[key]
+
+    dustbin = snapshot.dustbin.pose.position
+    np.testing.assert_allclose(transit_targets["bottle0"][:2], dustbin[:2] + [-0.12, -0.125])
+    np.testing.assert_allclose(transit_targets["bottle1"][:2], dustbin[:2] + [-0.12, 0.125])
+    np.testing.assert_allclose(transit_targets["bottle2"][:2], dustbin[:2] + [0.12, 0.125])
+    np.testing.assert_allclose(transit_targets["bottle3"][:2], dustbin[:2] + [0.12, -0.125])
+    for label, target in transit_targets.items():
+        np.testing.assert_allclose(target[3:], grasp_orientations[label])
+
+
 def test_drop_hold_settles_with_closed_gripper_before_release():
     controller = BottleController(ControllerConfig(bottle_limit=1, direct_right_drop=True, drop_hold_steps=4))
     controller.reset(MockBottleEnv(seed=0).snapshot())

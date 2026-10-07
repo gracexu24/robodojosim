@@ -84,6 +84,7 @@ class ControllerConfig:
     align_grasp_to_bbox_major_axis: bool = False
     left_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    drop_slot_offsets: tuple[tuple[float, float], ...] = ()
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
     workspace_max: tuple[float, float, float] = (0.75, 0.40, 1.35)
     # These are tool-center positions, not bottle positions. They are expected
@@ -149,6 +150,8 @@ class ControllerConfig:
             not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)
         ):
             raise ValueError("bottle_labels must be non-empty and unique when provided")
+        if any(len(offset) != 2 for offset in self.drop_slot_offsets):
+            raise ValueError("drop_slot_offsets must contain XY pairs")
         if np.any(np.asarray(self.workspace_min) >= np.asarray(self.workspace_max)):
             raise ValueError("workspace_min must be below workspace_max")
         if self.height_jitter < 0 or self.drop_xy_jitter < 0:
@@ -284,6 +287,11 @@ class BottleController:
                     dustbin_top + self.config.drop_clearance + height_delta,
                 ]
             )
+            if self.config.drop_slot_offsets:
+                drop_position[:2] += np.asarray(
+                    self.config.drop_slot_offsets[bottle_index % len(self.config.drop_slot_offsets)],
+                    dtype=np.float64,
+                )
             bottle = snapshot.bottles[label]
             bottle_center = bbox_world_center(bottle.pose, bottle.bbox)
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
@@ -532,7 +540,15 @@ class BottleController:
                     events.append(self._event(Phase.LIFT, poses, grippers, "left", left_lift, label))
                 carrying_arm = "left"
 
-            carry_pose = Pose(drop_position, self._orientation(carrying_arm, snapshot))
+            # Keep the yaw used to align the gripper with the bottle's major
+            # axis. Reverting to the generic arm orientation during transit
+            # twists a securely held bottle and makes its landing footprint
+            # unpredictable. Handover paths still use the receiving arm's
+            # calibrated orientation.
+            carry_orientation = (
+                orientation if carrying_arm == pick_arm else self._orientation(carrying_arm, snapshot)
+            )
+            carry_pose = Pose(drop_position, carry_orientation)
             events.append(self._event(Phase.TRANSIT, poses, grippers, carrying_arm, carry_pose, label))
             if self.config.drop_hold_steps:
                 events.append(

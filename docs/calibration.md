@@ -25,11 +25,12 @@ unreachable even though the hand looks roughly vertical.
 5. Restore `direct_left_max_x` and calibrate the right grasp quaternion.
 6. Tune `handover_right_position`, then bring `handover_left_position` toward it gradually. Avoid simultaneous arm
    collision; start farther apart and close the gap in 5–10 mm increments.
-7. Verify both arms drop inside the shared tabletop training dustbin. The experimental handoff settings are retained for
+7. Verify both arms drop inside the shared tabletop training dustbin. Keep the four `drop_slot_offsets` separated so
+   later bottles do not strike or stack on earlier placements. The experimental handoff settings are retained for
    future non-top-down strategies, but are not used by the production profiles.
 8. Tune `drop_clearance` so the bottle clears the rim but does not fall far enough to bounce out.
-9. Validate the small profile jitters separately: `policy_data.json` varies height by 8 mm and drop position by
-   15 mm; `world_model_data.json` uses 15 mm and 25 mm. Reduce either value if success degrades.
+9. Validate the small profile jitters separately: `policy_data.json` is deterministic; `world_model_data.json`
+   varies height by 15 mm and each drop slot by 10 mm. Reduce either value if success degrades.
 
 ## Safety invariants
 

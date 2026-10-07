@@ -24,8 +24,8 @@ Ubuntu + NVIDIA machine.
 - A ready-to-install `bottle_scripted` XPolicyLab adapter and Ubuntu helper scripts.
 - An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
   metadata value of `0.22 kg`), with original JSON backups.
-- An explicit, reversible training-layout transform that turns the far-left floor bin into a 29 cm-tall tabletop
-  receptacle at `[x=0, y=-0.10]` and uses four gripper-clear source slots, two per arm.
+- An explicit, reversible training-layout transform that turns the far-left floor bin into a 9.75 cm-tall tabletop
+  receptacle at `[x=0, y=-0.10]`, aligns side-lying bottles, and reserves four non-colliding drop slots.
 
 The controller uses privileged object poses only as a scripted teacher. Those poses are stored separately under
 `/teacher`; policy observations remain the normal camera and robot state. This data is suitable for imitation
@@ -106,8 +106,8 @@ XPolicyLab/policy/bottle_scripted/eval.sh \
 ```
 
 Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22` and converts only
-this task's public floor bin into a 29 cm-tall receptacle at the measured shared reachable point and moves the
-bottles outward only as needed while preserving their calibrated y positions. The original JSON is retained as
+this task's public floor bin into a 9.75 cm-tall, 51.7 cm-square receptacle at the measured shared reachable point
+and places the side-lying bottles in collision-free calibrated lanes. The original JSON is retained as
 `*.robodojosim-original`. This tabletop-bin variant is intentional training-environment design: the measured
 top-down workspaces have a central gap, so the public far-left bin requires an unreliable cross-arm handoff, while a
 full-size bin at the center intersects the table. Set
