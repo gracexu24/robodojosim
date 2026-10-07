@@ -150,7 +150,7 @@ def test_training_layout_uses_calibrated_right_bottle_lanes(tmp_path):
     ]
 
 
-def test_training_layout_uses_only_upright_graspable_plastic_bottles(tmp_path):
+def test_training_layout_uses_only_stable_graspable_plastic_bottles(tmp_path):
     layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
     layout_dir.mkdir(parents=True)
     path = layout_dir / "put_bottles_into_dustbin_3.json"
@@ -179,13 +179,13 @@ def test_training_layout_uses_only_upright_graspable_plastic_bottles(tmp_path):
 
     updated = json.loads(path.read_text(encoding="utf-8"))["Rigid"]["bottle"]
     assert [item["category_idx"] for item in updated] == [55, 0, 2, 25]
-    assert [item["default_pos"][2] for item in updated] == [0.805278, 0.796709, 0.796733, 0.797006]
+    assert [item["default_pos"][2] for item in updated] == [0.805818, 0.796616, 0.796505, 0.7969]
     assert [item["physics"]["mass"] for item in updated] == [0.15, 0.19, 0.19, 0.15]
     assert [item["default_ori"] for item in updated] == [
-        [0.5006, -0.4993, 0.4995, 0.5006],
-        [0.4995, -0.5003, 0.5005, 0.4997],
-        [-0.4993, 0.5005, -0.5004, -0.4998],
-        [0.5001, -0.5, 0.5, 0.4999],
+        [-0.659441512030497, 0.32933565903259576, -0.6322433619695931, 0.23862784235265624],
+        [0.5794581048099863, -0.5302326354153651, 0.46388952753634416, -0.4097415811857554],
+        [0.7054078776241998, -0.7055593122523169, -0.041947295191935983, 0.05316208710952126],
+        [0.6922284984917547, -0.1440945532460404, 0.692269282667391, 0.144290352677685],
     ]
     assert all(item["qpos"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
     assert all(item["rotate_rand"] is False for item in updated)

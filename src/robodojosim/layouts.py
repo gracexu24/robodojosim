@@ -9,13 +9,34 @@ from pathlib import Path
 
 # RoboDojo's ``bottle`` class also contains finger caps, end caps, a soda can,
 # and a metal flask.  These four assets are actual plastic drink bottles with
-# body diameters the X5 gripper can close around.  Center heights, masses, and
-# stable placement quaternions come from each installed asset's metadata.json.
+# body diameters the X5 gripper can close around.  Center heights and stable
+# placement quaternions are copied from RoboDojo-generated layouts that remain
+# settled in simulation; the asset metadata quaternions use a different frame.
 _TRAINING_PLASTIC_BOTTLES = (
-    (0, 0.031709, 0.19, (0.4995, -0.5003, 0.5005, 0.4997)),
-    (2, 0.031733, 0.19, (-0.4993, 0.5005, -0.5004, -0.4998)),
-    (25, 0.032006, 0.15, (0.5001, -0.5, 0.5, 0.4999)),
-    (55, 0.040278, 0.15, (0.5006, -0.4993, 0.4995, 0.5006)),
+    (
+        0,
+        0.0316156924876869,
+        0.19,
+        (0.5794581048099863, -0.5302326354153651, 0.46388952753634416, -0.4097415811857554),
+    ),
+    (
+        2,
+        0.0315050653781365,
+        0.19,
+        (0.7054078776241998, -0.7055593122523169, -0.041947295191935983, 0.05316208710952126),
+    ),
+    (
+        25,
+        0.0318999987239755,
+        0.15,
+        (0.6922284984917547, -0.1440945532460404, 0.692269282667391, 0.144290352677685),
+    ),
+    (
+        55,
+        0.0408180747094109,
+        0.15,
+        (-0.659441512030497, 0.32933565903259576, -0.6322433619695931, 0.23862784235265624),
+    ),
 )
 
 
