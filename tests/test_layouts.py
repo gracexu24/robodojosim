@@ -76,12 +76,12 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Geometry"]["dustbin"][0]["scale"] == [0.65, 0.6, 0.45]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
-    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [-0.35, -0.15]
+    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [-0.35, -0.17]
     assert updated["Rigid"]["bottle"][0]["xlim"] == [-0.35, -0.35]
-    assert updated["Rigid"]["bottle"][0]["ylim"] == [-0.15, -0.15]
-    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.35, 0.08]
+    assert updated["Rigid"]["bottle"][0]["ylim"] == [-0.17, -0.17]
+    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.35, 0.01]
     assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, -0.35]
-    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.08, 0.08]
+    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.01, 0.01]
     assert "robodojosim" not in updated
     assert centralize_dustbin(tmp_path) == []
 
@@ -143,10 +143,10 @@ def test_training_layout_uses_calibrated_right_bottle_lanes(tmp_path):
 
     updated = json.loads(path.read_text(encoding="utf-8"))["Rigid"]["bottle"]
     assert [item["default_pos"][:2] for item in updated] == [
-        [-0.35, -0.15],
-        [-0.35, 0.08],
-        [0.38, 0.08],
-        [0.38, -0.15],
+        [-0.35, -0.17],
+        [-0.35, 0.01],
+        [0.38, 0.01],
+        [0.38, -0.17],
     ]
 
 
@@ -285,7 +285,7 @@ def test_training_dustbin_migrates_failed_outer_and_rear_lane_variants(tmp_path)
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
     bottle = updated["Rigid"]["bottle"][0]
-    assert bottle["default_pos"][:2] == [-0.35, -0.15]
+    assert bottle["default_pos"][:2] == [-0.35, -0.17]
     assert bottle["xlim"] == [-0.35, -0.35]
-    assert bottle["ylim"] == [-0.15, -0.15]
+    assert bottle["ylim"] == [-0.17, -0.17]
     assert centralize_dustbin(tmp_path) == []

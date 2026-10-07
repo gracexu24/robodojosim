@@ -143,10 +143,10 @@ def configure_training_dustbin(
             with backup.open(encoding="utf-8") as handle:
                 source_bottles = json.load(handle).get("Rigid", {}).get("bottle", bottles)
         source_slots = (
-            (-0.35, -0.15),
-            (-0.35, 0.08),
-            (0.38, 0.08),
-            (0.38, -0.15),
+            (-0.35, -0.17),
+            (-0.35, 0.01),
+            (0.38, 0.01),
+            (0.38, -0.17),
         )
         try:
             layout_index = int(resolved.stem.rsplit("_", 1)[1])
