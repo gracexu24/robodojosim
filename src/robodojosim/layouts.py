@@ -9,13 +9,13 @@ from pathlib import Path
 
 # RoboDojo's ``bottle`` class also contains finger caps, end caps, a soda can,
 # and a metal flask.  These four assets are actual plastic drink bottles with
-# body diameters the X5 gripper can close around.  Heights and masses come from
-# each installed asset's metadata.json.
+# body diameters the X5 gripper can close around.  Center heights, masses, and
+# stable placement quaternions come from each installed asset's metadata.json.
 _TRAINING_PLASTIC_BOTTLES = (
-    (0, 0.245, 0.19),
-    (2, 0.245, 0.19),
-    (25, 0.204, 0.15),
-    (55, 0.225, 0.15),
+    (0, 0.122519, 0.19, (1.0, -0.0001, -0.0002, -0.0003)),
+    (2, 0.122513, 0.19, (1.0, 0.0001, 0.0001, -0.0005)),
+    (25, 0.032009, 0.15, (0.7071, 0.0001, 0.7071, 0.0001)),
+    (55, 0.114377, 0.15, (0.9999, -0.0123, 0.012, 0.0014)),
 )
 
 
@@ -158,16 +158,16 @@ def configure_training_dustbin(
             if not isinstance(position, list) or len(position) < 3:
                 continue
             slot_x, slot_y = source_slots[index % len(source_slots)]
-            category_idx, bottle_height, bottle_mass = _TRAINING_PLASTIC_BOTTLES[
+            category_idx, center_height, bottle_mass, stable_orientation = _TRAINING_PLASTIC_BOTTLES[
                 (layout_index + index) % len(_TRAINING_PLASTIC_BOTTLES)
             ]
             position[0] = slot_x
             position[1] = slot_y
-            position[2] = round(table_top + bottle_height / 2.0, 6)
+            position[2] = round(table_top + center_height, 6)
             bottle["category_idx"] = category_idx
             bottle["default_pos"] = position
-            bottle["default_ori"] = [1.0, 0.0, 0.0, 0.0]
-            bottle["qpos"] = [1.0, 0.0, 0.0, 0.0]
+            bottle["default_ori"] = list(stable_orientation)
+            bottle["qpos"] = list(stable_orientation)
             bottle["rotate_rand"] = False
             bottle["xlim"] = [slot_x, slot_x]
             bottle["ylim"] = [slot_y, slot_y]

@@ -179,10 +179,15 @@ def test_training_layout_uses_only_upright_graspable_plastic_bottles(tmp_path):
 
     updated = json.loads(path.read_text(encoding="utf-8"))["Rigid"]["bottle"]
     assert [item["category_idx"] for item in updated] == [55, 0, 2, 25]
-    assert [item["default_pos"][2] for item in updated] == [0.8775, 0.8875, 0.8875, 0.867]
+    assert [item["default_pos"][2] for item in updated] == [0.879377, 0.887519, 0.887513, 0.797009]
     assert [item["physics"]["mass"] for item in updated] == [0.15, 0.19, 0.19, 0.15]
-    assert all(item["default_ori"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
-    assert all(item["qpos"] == [1.0, 0.0, 0.0, 0.0] for item in updated)
+    assert [item["default_ori"] for item in updated] == [
+        [0.9999, -0.0123, 0.012, 0.0014],
+        [1.0, -0.0001, -0.0002, -0.0003],
+        [1.0, 0.0001, 0.0001, -0.0005],
+        [0.7071, 0.0001, 0.7071, 0.0001],
+    ]
+    assert [item["qpos"] for item in updated] == [item["default_ori"] for item in updated]
     assert all(item["rotate_rand"] is False for item in updated)
 
 
