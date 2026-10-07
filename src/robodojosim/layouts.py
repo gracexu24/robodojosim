@@ -71,7 +71,7 @@ def configure_training_dustbin(
     target_y: float = -0.10,
     width_scale: float = 0.8,
     depth_scale: float = 0.6,
-    height_scale: float = 0.2,
+    height_scale: float = 0.05,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
