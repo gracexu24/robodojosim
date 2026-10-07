@@ -546,6 +546,28 @@ def test_grasp_specific_step_size_preserves_fast_free_space_approach():
     assert np.max(np.linalg.norm(np.diff(grasp_positions, axis=0), axis=1)) <= 0.025 + 1e-6
 
 
+def test_pregrasp_settle_repeats_last_safe_approach_pose():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    baseline = BottleController(ControllerConfig(bottle_limit=1, direct_right_drop=True))
+    settled = BottleController(
+        ControllerConfig(bottle_limit=1, direct_right_drop=True, pregrasp_settle_steps=4)
+    )
+    baseline.reset(snapshot)
+    settled.reset(snapshot)
+    assert settled.planned_action_count == baseline.planned_action_count + 4
+
+    planned = [settled.next_action() for _ in range(settled.planned_action_count)]
+    first_grasp = next(i for i, step in enumerate(planned) if step.phase is Phase.GRASP)
+    pregrasp = planned[first_grasp - 5 : first_grasp]
+    assert len(pregrasp) == 5
+    assert all(step.phase is Phase.APPROACH for step in pregrasp)
+    arm = pregrasp[-1].active_arm
+    assert all(
+        np.array_equal(step.action[f"{arm}_ee_pose"], pregrasp[-1].action[f"{arm}_ee_pose"])
+        for step in pregrasp
+    )
+
+
 def test_home_completion_hover_stays_within_reward_tolerance():
     snapshot = MockBottleEnv(seed=0).snapshot()
     controller = BottleController(
