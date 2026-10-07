@@ -23,7 +23,11 @@ export EVAL_NUM="${ROBODOJOSIM_EVAL_NUM:-native}"
 # encode it as 22 kg. Correct only that exact typo, retaining one backup per
 # affected layout, so a normal X5 gripper can manipulate the plastic bottle.
 if [[ "${ROBODOJOSIM_FIX_BOTTLE_MASS:-1}" == "1" ]]; then
-    conda run -n "${EVAL_ENV}" robodojosim fix-layouts --robodojo-root "${ROBODOJO_ROOT}"
+    LAYOUT_ARGS=(fix-layouts --robodojo-root "${ROBODOJO_ROOT}")
+    if [[ "${ROBODOJOSIM_CENTRALIZE_DUSTBIN:-1}" == "1" ]]; then
+        LAYOUT_ARGS+=(--centralize-dustbin)
+    fi
+    conda run -n "${EVAL_ENV}" robodojosim "${LAYOUT_ARGS[@]}"
 fi
 
 bash "${XPL_ROOT}/policy/bottle_scripted/eval.sh" \

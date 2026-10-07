@@ -47,6 +47,7 @@ class ControllerConfig:
     bottle_fallback_half_height: float = 0.045
     dustbin_fallback_half_height: float = 0.25
     direct_left_max_x: float = 0.08
+    direct_right_drop: bool = False
     open_value: float = 1.0
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
@@ -316,7 +317,7 @@ class BottleController:
                 return events
 
             carrying_arm = pick_arm
-            if pick_arm == "right":
+            if pick_arm == "right" and not self.config.direct_right_drop:
                 right_handover = Pose(
                     self.config.handover_right_position, self._orientation("right", snapshot, handover=True)
                 )

@@ -7,7 +7,7 @@ from pathlib import Path
 from .campaign import run_campaign
 from .controller import BottleController, ControllerConfig
 from .datasets import summarize_dataset, write_splits
-from .layouts import normalize_bottle_mass
+from .layouts import centralize_dustbin, normalize_bottle_mass
 from .lerobot_export import export_lerobot
 from .mock_env import MockBottleEnv
 from .recording import EpisodeRecorder, validate_episode
@@ -122,7 +122,21 @@ def _campaign(args: argparse.Namespace) -> int:
 
 def _fix_layouts(args: argparse.Namespace) -> int:
     changed = normalize_bottle_mass(args.robodojo_root, dry_run=args.dry_run)
-    print(json.dumps({"matching_layouts": len(changed), "dry_run": args.dry_run}, indent=2))
+    dustbins = (
+        centralize_dustbin(args.robodojo_root, target_x=args.dustbin_x, dry_run=args.dry_run)
+        if args.centralize_dustbin
+        else []
+    )
+    print(
+        json.dumps(
+            {
+                "mass_layouts": len(changed),
+                "centralized_dustbin_layouts": len(dustbins),
+                "dry_run": args.dry_run,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -206,6 +220,8 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.set_defaults(func=_campaign)
     layouts = subparsers.add_parser("fix-layouts", help="correct the known 22 kg bottle layout typo")
     layouts.add_argument("--robodojo-root", required=True)
+    layouts.add_argument("--centralize-dustbin", action="store_true")
+    layouts.add_argument("--dustbin-x", type=float, default=0.0)
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)
     lerobot = subparsers.add_parser("export-lerobot", help="convert complete episodes to LeRobotDataset v3.0")

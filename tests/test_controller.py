@@ -187,3 +187,18 @@ def test_bottle_labels_can_isolate_right_arm_calibration():
         bottles.add(step.bottle)
     assert active_arms == {"right"}
     assert bottles == {"bottle3"}
+
+
+def test_direct_right_drop_avoids_handoff_for_central_bin_variant():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle3",),
+            bottle_limit=1,
+            direct_right_drop=True,
+        )
+    )
+    controller.reset(snapshot)
+    phases = [controller.next_action().phase for _ in range(controller.planned_action_count)]
+    assert Phase.HANDOVER not in phases
+    assert Phase.TRANSIT in phases
