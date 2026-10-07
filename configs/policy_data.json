@@ -12,9 +12,10 @@
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_horizontal_grasp_position_offset": [0.0, 0.0, 0.03],
   "align_grasp_to_bbox_major_axis": true,
-  "left_drop_position_offset": [-0.10, 0.10, 0.0],
+  "left_drop_position_offset": [0.0, 0.0, 0.0],
   "right_drop_position_offset": [0.0, 0.0, 0.0],
   "drop_clearance": 0.18,
+  "rim_clearance": 0.03,
   "dustbin_fallback_half_height": 0.14625,
   "retreat_height": 0.07,
   "direct_left_max_x": 0.08,
@@ -37,7 +38,7 @@
   "right_grasp_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239],
   "left_handover_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
   "right_handover_quaternion": [-0.353523, 0.61239, -0.353524, -0.61239],
-  "vary_bottle_order": true,
-  "height_jitter": 0.008,
-  "drop_xy_jitter": 0.015
+  "vary_bottle_order": false,
+  "height_jitter": 0.0,
+  "drop_xy_jitter": 0.0
 }

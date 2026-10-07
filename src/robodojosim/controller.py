@@ -9,7 +9,13 @@ from typing import Any
 
 import numpy as np
 
-from .geometry import align_tool_yaw_to_bbox_major_axis, bbox_top, bbox_world_center, interpolate_pose
+from .geometry import (
+    align_tool_yaw_to_bbox_major_axis,
+    bbox_bottom,
+    bbox_top,
+    bbox_world_center,
+    interpolate_pose,
+)
 from .types import Action, Pose, SceneSnapshot
 
 
@@ -45,6 +51,7 @@ class ControllerConfig:
     grasp_center_offset: float | None = None
     grasp_max_center_offset: float | None = None
     drop_clearance: float = 0.18
+    rim_clearance: float = 0.03
     retreat_height: float = 0.14
     bottle_fallback_half_height: float = 0.045
     dustbin_fallback_half_height: float = 0.25
@@ -111,6 +118,8 @@ class ControllerConfig:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
         if self.grasp_settle_steps < 0:
             raise ValueError("grasp_settle_steps cannot be negative")
+        if self.rim_clearance < 0:
+            raise ValueError("rim_clearance cannot be negative")
         if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
             raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
         if self.home_clearance_height <= 0:
@@ -308,11 +317,22 @@ class BottleController:
                     getattr(self.config, f"{pick_arm}_horizontal_grasp_position_offset"),
                     dtype=np.float64,
                 )
+            # A tall reward-valid bin must be approached from above.  Lifting
+            # by a fixed distance can leave the lower end of an upright or
+            # sideways bottle below the rim, so a lateral transit strikes the
+            # outside wall.  Preserve the grasp-to-object transform and raise
+            # the complete oriented bound above the rim before translating.
+            bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
+            grasp_to_bottom = max(0.0, float(grasp_position[2] - bottle_bottom))
+            rim_safe_tool_z = dustbin_top + self.config.rim_clearance + grasp_to_bottom
+            drop_position[2] = max(drop_position[2], rim_safe_tool_z)
             pregrasp = Pose(
                 grasp_position + np.array([0.0, 0.0, self.config.approach_height + height_delta]), orientation
             )
             grasp = Pose(grasp_position, orientation)
-            lift = Pose(grasp_position + np.array([0.0, 0.0, self.config.lift_height + height_delta]), orientation)
+            lift_position = grasp_position + np.array([0.0, 0.0, self.config.lift_height + height_delta])
+            lift_position[2] = max(lift_position[2], rim_safe_tool_z)
+            lift = Pose(lift_position, orientation)
 
             if self.config.use_overhead_approach:
                 # First rise at the current XY, then translate above the

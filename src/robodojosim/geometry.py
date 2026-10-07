@@ -144,3 +144,11 @@ def bbox_top(object_pose: Pose, bbox: np.ndarray | None, fallback_height: float)
     if bbox is None:
         return float(object_pose.position[2] + fallback_height)
     return float(np.max(bbox_world_corners(object_pose, bbox)[:, 2]))
+
+
+def bbox_bottom(object_pose: Pose, bbox: np.ndarray | None, fallback_height: float) -> float:
+    """Return the lowest world-space point of an oriented object bound."""
+
+    if bbox is None:
+        return float(object_pose.position[2] - fallback_height)
+    return float(np.min(bbox_world_corners(object_pose, bbox)[:, 2]))

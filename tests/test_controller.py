@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from robodojosim.controller import BottleController, ControllerConfig, Phase, SafetyError
-from robodojosim.geometry import bbox_top, quaternion_rotation_matrix
+from robodojosim.geometry import bbox_bottom, bbox_top, quaternion_rotation_matrix
 from robodojosim.mock_env import MockBottleEnv
 from robodojosim.types import ObjectState, Pose
 
@@ -255,6 +255,28 @@ def test_bbox_top_transforms_oriented_bounds_to_world_space():
     pose = Pose([0.2, -0.1, 0.8], [np.sqrt(0.5), 0.0, np.sqrt(0.5), 0.0])
     bbox = np.array([-0.04, -0.03, -0.12, 0.04, 0.03, 0.12])
     assert bbox_top(pose, bbox, 0.0) == pytest.approx(0.84)
+    assert bbox_bottom(pose, bbox, 0.0) == pytest.approx(0.76)
+
+
+def test_loaded_bottle_clears_bin_rim_before_lateral_transit():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    config = ControllerConfig(
+        bottle_labels=("bottle0",),
+        direct_right_drop=True,
+        lift_height=0.01,
+        rim_clearance=0.03,
+    )
+    controller = BottleController(config)
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    bottle = snapshot.bottles["bottle0"]
+    bottom = bbox_bottom(bottle.pose, bottle.bbox, config.bottle_fallback_half_height)
+    grasp = next(step for step in reversed(planned) if step.phase is Phase.GRASP)
+    lift = next(step for step in reversed(planned) if step.phase is Phase.LIFT)
+    tool_to_bottom = grasp.action["left_ee_pose"][2] - bottom
+    bottle_bottom_at_lift = lift.action["left_ee_pose"][2] - tool_to_bottom
+    bin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, config.dustbin_fallback_half_height)
+    assert bottle_bottom_at_lift >= bin_top + config.rim_clearance - 1e-6
 
 
 def test_loaded_lift_uses_smaller_motion_steps():
