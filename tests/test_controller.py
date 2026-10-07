@@ -331,4 +331,20 @@ def test_home_path_raises_clear_of_bin_before_crossing_table():
     # its final home height, then descends vertically.
     home_xy = snapshot.arms["right"].position[:2]
     overhead = next(position for position in right_home if np.linalg.norm(position[:2] - home_xy) < 1e-6)
-    assert overhead[2] > snapshot.arms["right"].position[2] + 0.2
+    assert overhead[2] > snapshot.arms["right"].position[2] + 0.1
+
+
+def test_home_hold_repeats_final_pose_for_controller_settling():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle3",),
+            direct_right_drop=True,
+            home_hold_steps=7,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    final = planned[-8:]
+    assert all(step.phase is Phase.HOME and step.active_arm == "right" for step in final)
+    assert all(np.array_equal(step.action["right_ee_pose"], final[-1].action["right_ee_pose"]) for step in final)

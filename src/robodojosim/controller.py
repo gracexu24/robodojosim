@@ -53,6 +53,8 @@ class ControllerConfig:
     gripper_hold_steps: int = 3
     lift_hold_steps: int = 1
     drop_hold_steps: int = 0
+    home_hold_steps: int = 1
+    home_clearance_height: float = 0.15
     max_actions: int = 700
     bottle_limit: int | None = None
     bottle_labels: tuple[str, ...] | None = None
@@ -96,8 +98,10 @@ class ControllerConfig:
             raise ValueError("loaded translation steps must be positive")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
-        if self.drop_hold_steps < 0:
-            raise ValueError("drop_hold_steps cannot be negative")
+        if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
+            raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
+        if self.home_clearance_height <= 0:
+            raise ValueError("home_clearance_height must be positive")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
         if self.bottle_labels is not None and (
@@ -477,7 +481,7 @@ class BottleController:
                 continue
             clearance = min(
                 self.config.workspace_max[2] - 0.02,
-                max(current_pose.position[2], home_pose.position[2]) + self.config.approach_height,
+                max(current_pose.position[2], home_pose.position[2]) + self.config.home_clearance_height,
             )
             raised = current_pose.at(
                 np.array([current_pose.position[0], current_pose.position[1], clearance])
@@ -488,7 +492,17 @@ class BottleController:
             )
             events.append(self._event(Phase.HOME, poses, grippers, arm, raised, None))
             events.append(self._event(Phase.HOME, poses, grippers, arm, home_overhead, None))
-            events.append(self._event(Phase.HOME, poses, grippers, arm, self._home[arm], None))
+            events.append(
+                self._event(
+                    Phase.HOME,
+                    poses,
+                    grippers,
+                    arm,
+                    self._home[arm],
+                    None,
+                    self.config.home_hold_steps,
+                )
+            )
         return events
 
     def _append_push(
