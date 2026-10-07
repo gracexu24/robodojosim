@@ -1,9 +1,18 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from robodojosim.controller import BottleController, ControllerConfig, Phase, SafetyError
 from robodojosim.mock_env import MockBottleEnv
 from robodojosim.types import Pose
+
+
+def test_production_profiles_use_physically_calibrated_left_grasp_center():
+    config_root = Path(__file__).parents[1] / "configs"
+    for name in ("bottle_task.json", "policy_data.json", "world_model_data.json"):
+        config = ControllerConfig.from_json(config_root / name)
+        assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
 
 
 def test_pose_normalizes_quaternion():
