@@ -18,7 +18,7 @@
   "lift_hold_steps": 8,
   "drop_hold_steps": 8,
   "max_actions": 380,
-  "bottle_labels": ["bottle0"],
+  "bottle_labels": ["bottle1"],
   "workspace_min": [-0.85, -0.55, 0.30],
   "workspace_max": [0.75, 0.40, 1.35],
   "left_grasp_quaternion": [-0.61239, 0.353523, -0.61239, -0.353524],
