@@ -132,8 +132,8 @@ def configure_training_dustbin(
         source_slots = (
             (-0.35, -0.24),
             (-0.35, 0.01),
-            (0.38, -0.24),
             (0.38, 0.01),
+            (0.38, -0.24),
         )
         for index, bottle in enumerate(bottles):
             source = source_bottles[index] if index < len(source_bottles) else bottle

@@ -120,6 +120,36 @@ def test_training_dustbin_removes_legacy_top_level_marker(tmp_path):
     assert configure_training_dustbin(tmp_path) == []
 
 
+def test_training_layout_uses_calibrated_right_bottle_lanes(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    path = layout_dir / "put_bottles_into_dustbin_0.json"
+    bottles = [
+        {"default_pos": [0.0, 0.0, 0.8], "xlim": [-0.35, 0.45], "ylim": [-0.25, 0.02]}
+        for _ in range(4)
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "Rigid": {"bottle": bottles},
+                "Geometry": {"dustbin": [{"category_idx": 0, "label": "dustbin"}]},
+                "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    configure_training_dustbin(tmp_path)
+
+    updated = json.loads(path.read_text(encoding="utf-8"))["Rigid"]["bottle"]
+    assert [item["default_pos"][:2] for item in updated] == [
+        [-0.35, -0.24],
+        [-0.35, 0.01],
+        [0.38, 0.01],
+        [0.38, -0.24],
+    ]
+
+
 def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
     layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
     layout_dir.mkdir(parents=True)
