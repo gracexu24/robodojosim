@@ -148,6 +148,17 @@ same GPU. Headless runs keep the default `ROBODOJOSIM_ENV_GPU_ID=0`.
 The policy server uses the lightweight `RoboDojoPolicy` environment because current XPolicyLab requires
 `websockets>=14`, while the Isaac Sim environment uses RoboDojo's `websockets==12` compatibility pin.
 
+For fast controller calibration without RGB recording, install the optional evaluator toggle once and set the
+environment variable only for diagnostic runs:
+
+```bash
+bash scripts/enable_fast_calibration.sh /path/to/RoboDojo
+export ROBODOJOSIM_CALIBRATION_FAST=1
+```
+
+Fast mode preserves simulator state, physics, actions, and reward checks, but disables camera sensors and evaluation
+video. Do not use it for policy or world-model collection; LeRobot export requires the normal three-camera output.
+
 ## Collection campaigns
 
 After the one-layout calibration succeeds, collect 50 successful policy episodes:
