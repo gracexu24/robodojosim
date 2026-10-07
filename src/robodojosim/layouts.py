@@ -67,7 +67,9 @@ def configure_training_dustbin(
     robodojo_root: str | Path,
     *,
     target_x: float = 0.0,
-    target_y: float = 0.30,
+    target_y: float = -0.10,
+    width_scale: float = 1.0,
+    depth_scale: float = 0.6,
     height_scale: float = 0.2,
     dry_run: bool = False,
 ) -> list[Path]:
@@ -75,16 +77,18 @@ def configure_training_dustbin(
 
     The public layout's 47 cm-wide floor bin sits at x=-0.63, outside the
     right arm's measured top-down workspace. Merely moving that full-height
-    bin to x=0 intersects the table. The training variant therefore preserves
-    the bin's full opening, reduces only its height to a 13 cm receptacle, and fixes its base to the
-    rear of the tabletop. Original JSON is backed up by :func:`_write_layout`.
+    bin to x=0 intersects the table. The training variant preserves the full
+    left/right opening, reduces its depth and height, and fixes its base at the
+    measured shared reachable point (x=0, y=-0.10). Bottles are moved into
+    collision-free outer x lanes. Original JSON is backed up by
+    :func:`_write_layout`.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.
     """
 
-    if height_scale <= 0:
-        raise ValueError("height_scale must be positive")
+    if min(width_scale, depth_scale, height_scale) <= 0:
+        raise ValueError("dustbin scale values must be positive")
 
     root = Path(robodojo_root).expanduser().resolve()
     changed: list[Path] = []
@@ -102,8 +106,9 @@ def configure_training_dustbin(
             public_or_floor_center = plane == "ground" and position[0] in (-0.63, float(target_x))
             old_tabletop_variant = (
                 plane == "table"
-                and position[:2] == [float(target_x), float(target_y)]
-                and scale == [1.0, 1.0, 0.5]
+                and position[0] == float(target_x)
+                and position[1] in (0.30, float(target_y))
+                and scale in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2])
             )
             if public_or_floor_center or old_tabletop_variant:
                 matches.append(item)
@@ -124,8 +129,21 @@ def configure_training_dustbin(
             dustbin["ylim"] = [float(target_y), float(target_y)]
             dustbin["zlim"] = [bin_center_z, bin_center_z]
             dustbin["relative_plane"] = "Table"
-            dustbin["scale"] = [1.0, 1.0, float(height_scale)]
+            dustbin["scale"] = [float(width_scale), float(depth_scale), float(height_scale)]
             dustbin.setdefault("physics", {})["collision"] = True
+        for bottle in data.get("Rigid", {}).get("bottle", []):
+            xlim = bottle.get("xlim")
+            position = bottle.get("default_pos")
+            if not isinstance(position, list) or not position:
+                continue
+            if xlim == [0.05, 0.45]:
+                fraction = (float(position[0]) - 0.05) / 0.40
+                position[0] = round(0.30 + 0.18 * fraction, 6)
+                bottle["xlim"] = [0.30, 0.48]
+            elif xlim == [-0.35, 0.05]:
+                fraction = (float(position[0]) + 0.35) / 0.40
+                position[0] = round(-0.38 + 0.08 * fraction, 6)
+                bottle["xlim"] = [-0.38, -0.30]
         _write_layout(resolved, data)
     return changed
 
