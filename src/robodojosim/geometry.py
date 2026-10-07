@@ -7,6 +7,36 @@ import numpy as np
 from .types import Pose
 
 
+def quaternion_rotation_matrix(quaternion: np.ndarray) -> np.ndarray:
+    """Return a 3x3 rotation matrix for a normalized qw, qx, qy, qz quaternion."""
+
+    w, x, y, z = np.asarray(quaternion, dtype=np.float64)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def bbox_world_center(object_pose: Pose, bbox: np.ndarray | None) -> np.ndarray:
+    """Transform a mesh-local AABB center into the task's world frame.
+
+    RoboDojo reports the transform of the first mesh together with mesh-local
+    bounds.  Some bottle mesh origins are near the neck rather than at the
+    geometric center, so targeting the raw transform can make a gripper land
+    on one end of an otherwise reachable bottle.
+    """
+
+    if bbox is None:
+        return object_pose.position.copy()
+    bounds = np.asarray(bbox, dtype=np.float64)
+    local_center = (bounds[:3] + bounds[3:]) / 2.0
+    return object_pose.position + quaternion_rotation_matrix(object_pose.quaternion) @ local_center
+
+
 def quaternion_slerp(q0: np.ndarray, q1: np.ndarray, fraction: float) -> np.ndarray:
     """Shortest-path SLERP for quaternions in qw, qx, qy, qz order."""
 

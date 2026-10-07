@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .geometry import bbox_top, interpolate_pose
+from .geometry import bbox_top, bbox_world_center, interpolate_pose
 from .types import Action, Pose, SceneSnapshot
 
 
@@ -239,6 +239,7 @@ class BottleController:
                 ]
             )
             bottle = snapshot.bottles[label]
+            bottle_center = bbox_world_center(bottle.pose, bottle.bbox)
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
             drop_position += np.asarray(
                 getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64
@@ -249,17 +250,17 @@ class BottleController:
                 and bottle_index == 0
                 and rng.random() < self.config.push_probability
             ):
-                self._append_push(events, poses, grippers, bottle.pose.position, orientation, pick_arm, label, rng)
+                self._append_push(events, poses, grippers, bottle_center, orientation, pick_arm, label, rng)
                 continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
-            grasp_position = bottle.pose.position.copy()
+            grasp_position = bottle_center.copy()
             if self.config.grasp_center_offset is None:
                 grasp_position[2] = top + self.config.grasp_clearance
             else:
                 # RoboDojo's bottle assets include upright and sideways poses.
                 # A tool-center offset from the live bounding-box center is
                 # invariant to that orientation, unlike a local-z "top".
-                grasp_position[2] = bottle.pose.position[2] + self.config.grasp_center_offset
+                grasp_position[2] = bottle_center[2] + self.config.grasp_center_offset
             grasp_position += np.asarray(
                 getattr(self.config, f"{pick_arm}_grasp_position_offset"), dtype=np.float64
             )

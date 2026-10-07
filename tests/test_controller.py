@@ -5,7 +5,7 @@ import pytest
 
 from robodojosim.controller import BottleController, ControllerConfig, Phase, SafetyError
 from robodojosim.mock_env import MockBottleEnv
-from robodojosim.types import Pose
+from robodojosim.types import ObjectState, Pose
 
 
 def test_production_profiles_use_physically_calibrated_left_grasp_center():
@@ -135,6 +135,33 @@ def test_arm_specific_grasp_position_offset_is_applied():
     expected = snapshot.bottles[bottle].pose.position + offset
     expected[2] += 0.055
     np.testing.assert_allclose(target, expected)
+
+
+def test_grasp_targets_world_center_of_asymmetric_mesh_bounds():
+    snapshot = MockBottleEnv(seed=1).snapshot()
+    bottles = dict(snapshot.bottles)
+    original = bottles["bottle3"]
+    # The mesh origin is at one end: its local AABB center is +8 cm on x.
+    bottles["bottle3"] = ObjectState(
+        original.pose,
+        np.array([0.02, -0.03, -0.04, 0.14, 0.03, 0.04]),
+    )
+    snapshot = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+    controller = BottleController(
+        ControllerConfig(
+            grasp_center_offset=0.055,
+            bottle_labels=("bottle3",),
+            stop_after_lift=True,
+        )
+    )
+    controller.reset(snapshot)
+    grasp = None
+    while not controller.done:
+        step = controller.next_action()
+        if step.phase is Phase.GRASP:
+            grasp = step.action["right_ee_pose"][:3]
+    expected = original.pose.position + np.array([0.08, 0.0, 0.055])
+    np.testing.assert_allclose(grasp, expected)
 
 
 def test_loaded_lift_uses_smaller_motion_steps():
