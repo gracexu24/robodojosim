@@ -25,7 +25,7 @@ Ubuntu + NVIDIA machine.
 - An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
   metadata value of `0.22 kg`), with original JSON backups.
 - An explicit, reversible training-layout transform that turns the far-left floor bin into a 29 cm-tall tabletop
-  receptacle at `[x=0, y=-0.10]` and moves bottles into gripper-clear outer x lanes.
+  receptacle at `[x=0, y=-0.10]` and uses four gripper-clear source slots, two per arm.
 
 The controller uses privileged object poses only as a scripted teacher. Those poses are stored separately under
 `/teacher`; policy observations remain the normal camera and robot state. This data is suitable for imitation

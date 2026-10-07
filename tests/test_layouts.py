@@ -73,15 +73,15 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Geometry"]["dustbin"][0]["ylim"] == [-0.1, -0.1]
     assert updated["Geometry"]["dustbin"][0]["zlim"] == [0.91125, 0.91125]
     assert updated["Geometry"]["dustbin"][0]["relative_plane"] == "Table"
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [0.8, 0.6, 0.45]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [0.65, 0.6, 0.45]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
-    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.415, -0.1]
-    assert updated["Rigid"]["bottle"][0]["xlim"] == [0.38, 0.45]
-    assert updated["Rigid"]["bottle"][0]["ylim"] == [-0.25, 0.02]
-    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.415, -0.1]
-    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.45, -0.38]
-    assert updated["Rigid"]["bottle"][1]["ylim"] == [-0.25, 0.02]
+    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [-0.35, -0.24]
+    assert updated["Rigid"]["bottle"][0]["xlim"] == [-0.35, -0.35]
+    assert updated["Rigid"]["bottle"][0]["ylim"] == [-0.24, -0.24]
+    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.35, 0.01]
+    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, -0.35]
+    assert updated["Rigid"]["bottle"][1]["ylim"] == [0.01, 0.01]
     assert "robodojosim" not in updated
     assert centralize_dustbin(tmp_path) == []
 
@@ -174,7 +174,7 @@ def test_training_dustbin_migrates_old_half_height_tabletop_variant(tmp_path):
 
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [0.8, 0.6, 0.45]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [0.65, 0.6, 0.45]
     assert centralize_dustbin(tmp_path) == []
 
 
@@ -214,7 +214,7 @@ def test_training_dustbin_migrates_failed_outer_and_rear_lane_variants(tmp_path)
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
     bottle = updated["Rigid"]["bottle"][0]
-    assert bottle["default_pos"][:2] == [0.415, -0.099999]
-    assert bottle["xlim"] == [0.38, 0.45]
-    assert bottle["ylim"] == [-0.25, 0.02]
+    assert bottle["default_pos"][:2] == [-0.35, -0.24]
+    assert bottle["xlim"] == [-0.35, -0.35]
+    assert bottle["ylim"] == [-0.24, -0.24]
     assert centralize_dustbin(tmp_path) == []

@@ -69,7 +69,7 @@ def configure_training_dustbin(
     *,
     target_x: float = 0.0,
     target_y: float = -0.10,
-    width_scale: float = 0.8,
+    width_scale: float = 0.65,
     depth_scale: float = 0.6,
     height_scale: float = 0.45,
     dry_run: bool = False,
@@ -80,8 +80,8 @@ def configure_training_dustbin(
     right arm's measured top-down workspace. Merely moving that full-height
     bin to x=0 intersects the table. The training variant reduces and raises
     the bin onto the table at the measured shared reachable point
-    (x=0, y=-0.10). Bottles keep their calibrated y positions and are remapped
-    into outer x lanes that leave room for an open gripper. Original
+    (x=0, y=-0.10). The four bottles are placed in collision-separated source
+    slots, two per arm, that leave room for an open gripper. Original
     JSON is backed up by :func:`_write_layout`.
 
     The 0.45 height scale is deliberate: RoboDojo's reward requires the
@@ -129,44 +129,23 @@ def configure_training_dustbin(
         if backup.exists():
             with backup.open(encoding="utf-8") as handle:
                 source_bottles = json.load(handle).get("Rigid", {}).get("bottle", bottles)
+        source_slots = (
+            (-0.35, -0.24),
+            (-0.35, 0.01),
+            (0.38, -0.24),
+            (0.38, 0.01),
+        )
         for index, bottle in enumerate(bottles):
             source = source_bottles[index] if index < len(source_bottles) else bottle
             position = list(source.get("default_pos", bottle.get("default_pos", [])))
             if not isinstance(position, list) or len(position) < 2:
                 continue
-            xlim = source.get("xlim")
-            ylim = source.get("ylim")
-            if xlim == [0.30, 0.48]:
-                fraction = (float(position[0]) - 0.30) / 0.18
-                position[0] = round(0.38 + 0.07 * fraction, 6)
-                xlim = [0.38, 0.45]
-            elif xlim == [-0.38, -0.30]:
-                fraction = (float(position[0]) + 0.38) / 0.08
-                position[0] = round(-0.45 + 0.07 * fraction, 6)
-                xlim = [-0.45, -0.38]
-            elif xlim == [0.05, 0.45]:
-                # Migrate the earlier broad center lane, which could leave an
-                # upright bottle too close to the bin for an open gripper.
-                fraction = (float(position[0]) - 0.05) / 0.40
-                position[0] = round(0.38 + 0.07 * fraction, 6)
-                xlim = [0.38, 0.45]
-            elif xlim == [-0.35, 0.05]:
-                fraction = (float(position[0]) + 0.35) / 0.40
-                position[0] = round(-0.45 + 0.07 * fraction, 6)
-                xlim = [-0.45, -0.38]
-            if ylim == [0.10, 0.20]:
-                fraction = (float(position[1]) - 0.10) / 0.10
-                position[1] = round(-0.25 + 0.27 * fraction, 6)
-                ylim = [-0.25, 0.02]
-            elif ylim == [0.06, 0.12]:
-                fraction = (float(position[1]) - 0.06) / 0.06
-                position[1] = round(-0.25 + 0.27 * fraction, 6)
-                ylim = [-0.25, 0.02]
+            slot_x, slot_y = source_slots[index % len(source_slots)]
+            position[0] = slot_x
+            position[1] = slot_y
             bottle["default_pos"] = position
-            if xlim is not None:
-                bottle["xlim"] = xlim
-            if ylim is not None:
-                bottle["ylim"] = ylim
+            bottle["xlim"] = [slot_x, slot_x]
+            bottle["ylim"] = [slot_y, slot_y]
         if data == original_data:
             continue
         changed.append(path)
