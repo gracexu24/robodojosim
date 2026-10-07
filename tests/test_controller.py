@@ -305,3 +305,30 @@ def test_drop_hold_settles_with_closed_gripper_before_release():
     hold = planned[release_index - 4 : release_index]
     assert [step.phase for step in hold] == [Phase.HOLD] * 4
     assert all(float(step.action["left_ee_joint_state"][0]) == 0.0 for step in hold)
+
+
+def test_home_path_raises_clear_of_bin_before_crossing_table():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle3",),
+            direct_right_drop=True,
+            approach_height=0.30,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    last_retreat = max(i for i, step in enumerate(planned) if step.phase is Phase.RETREAT)
+    right_home = [
+        step.action["right_ee_pose"][:3]
+        for step in planned[last_retreat + 1 :]
+        if step.phase is Phase.HOME and step.active_arm == "right"
+    ]
+    retreat = planned[last_retreat].action["right_ee_pose"][:3]
+    assert right_home[0][2] > retreat[2]
+    np.testing.assert_allclose(right_home[0][:2], retreat[:2])
+    # The arm reaches its home XY while still above both the bin retreat and
+    # its final home height, then descends vertically.
+    home_xy = snapshot.arms["right"].position[:2]
+    overhead = next(position for position in right_home if np.linalg.norm(position[:2] - home_xy) < 1e-6)
+    assert overhead[2] > snapshot.arms["right"].position[2] + 0.2

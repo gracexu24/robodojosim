@@ -465,9 +465,29 @@ class BottleController:
             events.append(self._event(Phase.RETREAT, poses, grippers, carrying_arm, retreat, label))
 
         # Full reward requires both grippers open and both arms back at their
-        # exact episode-start poses.
+        # exact episode-start poses. Return through a high waypoint: a direct
+        # diagonal move from the bin can sweep the long X5 fingers through an
+        # object that was just released successfully.
         for arm in ("left", "right"):
             grippers[arm] = self.config.open_value
+            current_pose = poses[arm]
+            home_pose = self._home[arm]
+            if np.linalg.norm(current_pose.position - home_pose.position) < 1e-6:
+                events.append(self._event(Phase.HOME, poses, grippers, arm, home_pose, None))
+                continue
+            clearance = min(
+                self.config.workspace_max[2] - 0.02,
+                max(current_pose.position[2], home_pose.position[2]) + self.config.approach_height,
+            )
+            raised = current_pose.at(
+                np.array([current_pose.position[0], current_pose.position[1], clearance])
+            )
+            home_overhead = Pose(
+                np.array([home_pose.position[0], home_pose.position[1], clearance]),
+                home_pose.quaternion,
+            )
+            events.append(self._event(Phase.HOME, poses, grippers, arm, raised, None))
+            events.append(self._event(Phase.HOME, poses, grippers, arm, home_overhead, None))
             events.append(self._event(Phase.HOME, poses, grippers, arm, self._home[arm], None))
         return events
 
