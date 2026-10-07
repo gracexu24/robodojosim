@@ -14,6 +14,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
     for name in ("bottle_task.json", "policy_data.json", "world_model_data.json"):
         config = ControllerConfig.from_json(config_root / name)
         assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
+        assert config.grasp_max_center_offset == 0.10
 
 
 def test_pose_normalizes_quaternion():
@@ -160,6 +161,34 @@ def test_grasp_targets_world_center_of_asymmetric_mesh_bounds():
         if step.phase is Phase.GRASP:
             grasp = step.action["right_ee_pose"][:3]
     expected = original.pose.position + np.array([0.08, 0.0, 0.055])
+    np.testing.assert_allclose(grasp, expected)
+
+
+def test_grasp_target_caps_height_above_center_for_upright_bottle():
+    snapshot = MockBottleEnv(seed=1).snapshot()
+    bottles = dict(snapshot.bottles)
+    original = bottles["bottle3"]
+    bottles["bottle3"] = ObjectState(
+        Pose(original.pose.position, [1.0, 0.0, 0.0, 0.0]),
+        np.array([-0.035, -0.035, -0.12, 0.035, 0.035, 0.12]),
+    )
+    snapshot = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+    controller = BottleController(
+        ControllerConfig(
+            grasp_clearance=0.05,
+            grasp_max_center_offset=0.10,
+            bottle_labels=("bottle3",),
+            stop_after_lift=True,
+        )
+    )
+    controller.reset(snapshot)
+    grasp = None
+    while not controller.done:
+        step = controller.next_action()
+        if step.phase is Phase.GRASP:
+            grasp = step.action["right_ee_pose"][:3]
+    expected = original.pose.position.copy()
+    expected[2] += 0.10
     np.testing.assert_allclose(grasp, expected)
 
 

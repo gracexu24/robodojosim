@@ -42,6 +42,7 @@ class ControllerConfig:
     lift_height: float = 0.20
     grasp_clearance: float = 0.015
     grasp_center_offset: float | None = None
+    grasp_max_center_offset: float | None = None
     drop_clearance: float = 0.18
     retreat_height: float = 0.14
     bottle_fallback_half_height: float = 0.045
@@ -107,6 +108,8 @@ class ControllerConfig:
             raise ValueError("home_completion_height_offset must stay within RoboDojo's 0.15 m origin tolerance")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
+        if self.grasp_max_center_offset is not None and self.grasp_max_center_offset <= 0:
+            raise ValueError("grasp_max_center_offset must be positive when provided")
         if self.bottle_labels is not None and (
             not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)
         ):
@@ -263,7 +266,10 @@ class BottleController:
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle_center.copy()
             if self.config.grasp_center_offset is None:
-                grasp_position[2] = top + self.config.grasp_clearance
+                center_offset = top + self.config.grasp_clearance - bottle_center[2]
+                if self.config.grasp_max_center_offset is not None:
+                    center_offset = min(center_offset, self.config.grasp_max_center_offset)
+                grasp_position[2] = bottle_center[2] + center_offset
             else:
                 # RoboDojo's bottle assets include upright and sideways poses.
                 # A tool-center offset from the live bounding-box center is
