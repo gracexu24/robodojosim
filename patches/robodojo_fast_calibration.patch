@@ -1,7 +1,7 @@
 diff --git a/scripts/eval_policy.sh b/scripts/eval_policy.sh
 --- a/scripts/eval_policy.sh
 +++ b/scripts/eval_policy.sh
-@@ -108,10 +108,18 @@ KIT_ENABLE_EXTS=(
+@@ -108,7 +108,14 @@ KIT_ENABLE_EXTS=(
    "isaacsim.sensors.camera"
  )
  
