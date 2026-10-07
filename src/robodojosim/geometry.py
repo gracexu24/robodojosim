@@ -37,6 +37,63 @@ def bbox_world_center(object_pose: Pose, bbox: np.ndarray | None) -> np.ndarray:
     return object_pose.position + quaternion_rotation_matrix(object_pose.quaternion) @ local_center
 
 
+def quaternion_multiply(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    """Hamilton product for qw, qx, qy, qz quaternions."""
+
+    lw, lx, ly, lz = np.asarray(left, dtype=np.float64)
+    rw, rx, ry, rz = np.asarray(right, dtype=np.float64)
+    return np.array(
+        [
+            lw * rw - lx * rx - ly * ry - lz * rz,
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+        ],
+        dtype=np.float64,
+    )
+
+
+def align_tool_yaw_to_bbox_major_axis(
+    grasp_quaternion: np.ndarray,
+    object_pose: Pose,
+    bbox: np.ndarray | None,
+    *,
+    tool_length_axis: int = 2,
+) -> np.ndarray:
+    """Yaw a vertical gripper so its fingers run along an object's major axis.
+
+    The X5 tool's local z axis runs along the fingers when its local x axis is
+    pointed down.  Aligning that axis with a bottle's projected longest mesh
+    dimension makes the jaws close across the bottle instead of squeezing it
+    lengthwise.  A vertical major axis has no useful table-plane direction,
+    so the calibrated base orientation is retained in that case.
+    """
+
+    quaternion = np.asarray(grasp_quaternion, dtype=np.float64)
+    if bbox is None:
+        return quaternion.copy()
+    bounds = np.asarray(bbox, dtype=np.float64)
+    major_axis = int(np.argmax(bounds[3:] - bounds[:3]))
+    desired = quaternion_rotation_matrix(object_pose.quaternion)[:2, major_axis]
+    current = quaternion_rotation_matrix(quaternion)[:2, tool_length_axis]
+    desired_norm = float(np.linalg.norm(desired))
+    current_norm = float(np.linalg.norm(current))
+    if desired_norm < 1e-4 or current_norm < 1e-4:
+        return quaternion.copy()
+    desired /= desired_norm
+    current /= current_norm
+    delta = math.atan2(current[0] * desired[1] - current[1] * desired[0], float(np.dot(current, desired)))
+    # Both axes describe unoriented lines, so choose the equivalent yaw with
+    # the smallest rotation from the calibrated arm posture.
+    if delta > math.pi / 2:
+        delta -= math.pi
+    elif delta < -math.pi / 2:
+        delta += math.pi
+    yaw = np.array([math.cos(delta / 2), 0.0, 0.0, math.sin(delta / 2)])
+    result = quaternion_multiply(yaw, quaternion)
+    return result / np.linalg.norm(result)
+
+
 def quaternion_slerp(q0: np.ndarray, q1: np.ndarray, fraction: float) -> np.ndarray:
     """Shortest-path SLERP for quaternions in qw, qx, qy, qz order."""
 

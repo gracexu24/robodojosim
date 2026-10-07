@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .geometry import bbox_top, bbox_world_center, interpolate_pose
+from .geometry import align_tool_yaw_to_bbox_major_axis, bbox_top, bbox_world_center, interpolate_pose
 from .types import Action, Pose, SceneSnapshot
 
 
@@ -60,6 +60,7 @@ class ControllerConfig:
     use_overhead_approach: bool = True
     left_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    align_grasp_to_bbox_major_axis: bool = False
     left_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
@@ -245,6 +246,12 @@ class BottleController:
                 getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64
             )
             orientation = self._orientation(pick_arm, snapshot)
+            if self.config.align_grasp_to_bbox_major_axis:
+                orientation = align_tool_yaw_to_bbox_major_axis(
+                    orientation,
+                    bottle.pose,
+                    bottle.bbox,
+                )
             if (
                 self.config.world_model_movements
                 and bottle_index == 0

@@ -8,6 +8,7 @@
   "grasp_center_offset": 0.055,
   "left_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
+  "align_grasp_to_bbox_major_axis": true,
   "left_drop_position_offset": [-0.10, 0.10, 0.0],
   "right_drop_position_offset": [0.0, 0.0, 0.0],
   "drop_clearance": 0.18,
