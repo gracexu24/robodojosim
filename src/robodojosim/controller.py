@@ -66,6 +66,9 @@ class ControllerConfig:
     use_overhead_approach: bool = True
     left_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    horizontal_bottle_half_height_max: float = 0.06
+    left_horizontal_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    right_horizontal_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     align_grasp_to_bbox_major_axis: bool = False
     left_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -114,6 +117,8 @@ class ControllerConfig:
             raise ValueError("bottle_limit must be positive when provided")
         if self.grasp_max_center_offset is not None and self.grasp_max_center_offset <= 0:
             raise ValueError("grasp_max_center_offset must be positive when provided")
+        if self.horizontal_bottle_half_height_max <= 0:
+            raise ValueError("horizontal_bottle_half_height_max must be positive")
         if self.bottle_labels is not None and (
             not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)
         ):
@@ -282,6 +287,11 @@ class BottleController:
                 # invariant to that orientation, unlike a local-z "top".
                 grasp_position[2] = bottle_center[2] + self.config.grasp_center_offset
             grasp_position += np.asarray(getattr(self.config, f"{pick_arm}_grasp_position_offset"), dtype=np.float64)
+            if top - bottle_center[2] <= self.config.horizontal_bottle_half_height_max:
+                grasp_position += np.asarray(
+                    getattr(self.config, f"{pick_arm}_horizontal_grasp_position_offset"),
+                    dtype=np.float64,
+                )
             pregrasp = Pose(
                 grasp_position + np.array([0.0, 0.0, self.config.approach_height + height_delta]), orientation
             )

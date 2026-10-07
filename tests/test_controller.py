@@ -137,6 +137,34 @@ def test_arm_specific_grasp_position_offset_is_applied():
     np.testing.assert_allclose(target, expected)
 
 
+def test_horizontal_grasp_offset_applies_only_to_sideways_bottle():
+    snapshot = MockBottleEnv(seed=1).snapshot()
+    bottles = dict(snapshot.bottles)
+    original = bottles["bottle3"]
+    bbox = np.array([-0.035, -0.035, -0.12, 0.035, 0.035, 0.12])
+
+    def target(quaternion):
+        bottles["bottle3"] = ObjectState(Pose(original.pose.position, quaternion), bbox)
+        scene = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+        controller = BottleController(
+            ControllerConfig(
+                grasp_clearance=0.05,
+                grasp_max_center_offset=0.09,
+                right_horizontal_grasp_position_offset=(0.0, 0.0, 0.03),
+                bottle_labels=("bottle3",),
+                stop_after_lift=True,
+            )
+        )
+        controller.reset(scene)
+        steps = [controller.next_action() for _ in range(controller.planned_action_count)]
+        return next(step.action["right_ee_pose"][:3] for step in reversed(steps) if step.phase is Phase.GRASP)
+
+    upright = target([1.0, 0.0, 0.0, 0.0])
+    sideways = target([np.sqrt(0.5), 0.0, np.sqrt(0.5), 0.0])
+    assert upright[2] == pytest.approx(original.pose.position[2] + 0.09)
+    assert sideways[2] == pytest.approx(original.pose.position[2] + 0.115)
+
+
 def test_grasp_targets_world_center_of_asymmetric_mesh_bounds():
     snapshot = MockBottleEnv(seed=1).snapshot()
     bottles = dict(snapshot.bottles)
