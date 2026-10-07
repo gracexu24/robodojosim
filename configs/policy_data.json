@@ -1,5 +1,6 @@
 {
-  "max_translation_step": 0.045,
+  "max_translation_step": 0.035,
+  "max_grasp_translation_step": 0.025,
   "max_lift_translation_step": 0.010,
   "max_carry_translation_step": 0.012,
   "max_home_translation_step": 0.070,
@@ -21,6 +22,7 @@
   "direct_left_max_x": 0.08,
   "direct_right_drop": true,
   "gripper_hold_steps": 5,
+  "pregrasp_settle_steps": 4,
   "grasp_settle_steps": 0,
   "lift_hold_steps": 5,
   "drop_hold_steps": 3,
