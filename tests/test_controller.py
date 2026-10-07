@@ -380,6 +380,52 @@ def test_home_hold_repeats_final_pose_for_controller_settling():
     assert all(np.array_equal(step.action["right_ee_pose"], final[-1].action["right_ee_pose"]) for step in final)
 
 
+def test_home_between_bottles_resets_arm_before_next_approach():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0", "bottle1"),
+            direct_right_drop=True,
+            home_between_bottles=True,
+            home_completion_height_offset=0.10,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    first_bottle_end = max(i for i, step in enumerate(planned) if step.bottle == "bottle0")
+    second_bottle_start = min(i for i, step in enumerate(planned) if step.bottle == "bottle1")
+    between = planned[first_bottle_end + 1 : second_bottle_start]
+    assert between
+    assert all(step.phase is Phase.HOME for step in between)
+
+
+def test_home_specific_step_size_does_not_change_loaded_motion_limits():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_limit=1,
+            direct_right_drop=True,
+            max_translation_step=0.04,
+            max_lift_translation_step=0.01,
+            max_carry_translation_step=0.012,
+            max_home_translation_step=0.06,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    for phase, maximum in ((Phase.LIFT, 0.01), (Phase.TRANSIT, 0.012), (Phase.HOME, 0.06)):
+        for arm in ("left", "right"):
+            positions = np.array(
+                [
+                    step.action[f"{arm}_ee_pose"][:3]
+                    for step in planned
+                    if step.phase is phase and step.active_arm == arm
+                ]
+            )
+            if len(positions) > 1:
+                assert np.max(np.linalg.norm(np.diff(positions, axis=0), axis=1)) <= maximum + 1e-6
+
+
 def test_home_completion_hover_stays_within_reward_tolerance():
     snapshot = MockBottleEnv(seed=0).snapshot()
     controller = BottleController(
