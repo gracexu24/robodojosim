@@ -364,6 +364,19 @@ def test_drop_hold_settles_with_closed_gripper_before_release():
     assert all(float(step.action["left_ee_joint_state"][0]) == 0.0 for step in hold)
 
 
+def test_grasp_settle_repeats_target_with_open_gripper_before_close():
+    controller = BottleController(
+        ControllerConfig(bottle_limit=1, stop_after_lift=True, grasp_settle_steps=3)
+    )
+    controller.reset(MockBottleEnv(seed=0).snapshot())
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    close_index = next(i for i, step in enumerate(planned) if step.phase is Phase.CLOSE)
+    settle = planned[close_index - 3 : close_index]
+    assert [step.phase for step in settle] == [Phase.GRASP] * 3
+    assert all(float(step.action["left_ee_joint_state"][0]) == 1.0 for step in settle)
+    assert all(np.array_equal(step.action["left_ee_pose"], settle[-1].action["left_ee_pose"]) for step in settle)
+
+
 def test_home_path_raises_clear_of_bin_before_crossing_table():
     snapshot = MockBottleEnv(seed=0).snapshot()
     controller = BottleController(

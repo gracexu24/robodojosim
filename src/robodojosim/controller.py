@@ -53,6 +53,7 @@ class ControllerConfig:
     open_value: float = 1.0
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
+    grasp_settle_steps: int = 0
     lift_hold_steps: int = 1
     drop_hold_steps: int = 0
     home_hold_steps: int = 1
@@ -107,6 +108,8 @@ class ControllerConfig:
             raise ValueError("max_home_translation_step must be positive when provided")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
+        if self.grasp_settle_steps < 0:
+            raise ValueError("grasp_settle_steps cannot be negative")
         if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
             raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
         if self.home_clearance_height <= 0:
@@ -310,7 +313,15 @@ class BottleController:
             events.extend(
                 [
                     self._event(Phase.APPROACH, poses, grippers, pick_arm, pregrasp, label),
-                    self._event(Phase.GRASP, poses, grippers, pick_arm, grasp, label),
+                    self._event(
+                        Phase.GRASP,
+                        poses,
+                        grippers,
+                        pick_arm,
+                        grasp,
+                        label,
+                        self.config.grasp_settle_steps,
+                    ),
                 ]
             )
             grippers[pick_arm] = self.config.closed_value
