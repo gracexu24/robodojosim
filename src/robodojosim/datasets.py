@@ -131,11 +131,7 @@ def write_splits(
         raise ValueError("ratios must satisfy train > 0, validation >= 0, and train + validation < 1")
     dataset_dir = Path(dataset_dir)
     records, _ = list_episodes(dataset_dir, profile=profile)
-    eligible = [
-        record
-        for record in records
-        if record.complete and (record.success or profile == "world_model")
-    ]
+    eligible = [record for record in records if record.complete and (record.success or profile == "world_model")]
     if not eligible:
         raise ValueError("dataset contains no eligible complete episodes")
 

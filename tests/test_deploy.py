@@ -7,9 +7,7 @@ from test_adapter import FakeSceneManager
 from robodojosim.mock_env import MockBottleEnv
 from robodojosim.recording import EpisodeRecorder
 
-_DEPLOY_PATH = (
-    Path(__file__).parents[1] / "integration" / "xpolicylab" / "policy" / "bottle_scripted" / "deploy.py"
-)
+_DEPLOY_PATH = Path(__file__).parents[1] / "integration" / "xpolicylab" / "policy" / "bottle_scripted" / "deploy.py"
 _SPEC = importlib.util.spec_from_file_location("bottle_scripted_deploy", _DEPLOY_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _MODULE = importlib.util.module_from_spec(_SPEC)

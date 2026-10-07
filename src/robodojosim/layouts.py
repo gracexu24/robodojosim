@@ -103,11 +103,7 @@ def configure_training_dustbin(
         data.pop("robodojosim", None)
         bottles = data.get("Rigid", {}).get("bottle", [])
         dustbins = data.get("Geometry", {}).get("dustbin", [])
-        matches = [
-            item
-            for item in dustbins
-            if item.get("category_idx") == 0 and item.get("label") == "dustbin"
-        ]
+        matches = [item for item in dustbins if item.get("category_idx") == 0 and item.get("label") == "dustbin"]
         if not matches:
             continue
         table = data.get("Table", {})
@@ -170,9 +166,7 @@ def configure_training_dustbin(
     return changed
 
 
-def centralize_dustbin(
-    robodojo_root: str | Path, *, target_x: float = 0.0, dry_run: bool = False
-) -> list[Path]:
+def centralize_dustbin(robodojo_root: str | Path, *, target_x: float = 0.0, dry_run: bool = False) -> list[Path]:
     """Backward-compatible name for the tabletop training-bin transform."""
 
     return configure_training_dustbin(robodojo_root, target_x=target_x, dry_run=dry_run)

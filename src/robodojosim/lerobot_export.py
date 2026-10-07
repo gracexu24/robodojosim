@@ -36,11 +36,7 @@ STATE_NAMES = [
 
 def _eligible_episodes(dataset_dir: Path, profile: str | None) -> list[EpisodeInfo]:
     records, _ = list_episodes(dataset_dir, profile=profile)
-    return [
-        record
-        for record in records
-        if record.complete and (record.success or profile != "policy")
-    ]
+    return [record for record in records if record.complete and (record.success or profile != "policy")]
 
 
 def _read_text(dataset: h5py.Dataset) -> str:
@@ -59,8 +55,7 @@ def _vector(handle: h5py.File, group: str, index: int) -> np.ndarray:
         gripper = np.asarray(handle[gripper_key][index], dtype=np.float32).reshape(-1)
         if pose.shape != (7,) or gripper.shape != (1,):
             raise ValueError(
-                f"{handle.filename}: expected {arm} pose/gripper dimensions 7+1, "
-                f"got {pose.shape}+{gripper.shape}"
+                f"{handle.filename}: expected {arm} pose/gripper dimensions 7+1, got {pose.shape}+{gripper.shape}"
             )
         parts.extend((pose, gripper))
     return np.concatenate(parts).astype(np.float32, copy=False)
@@ -81,7 +76,9 @@ def _image(dataset: h5py.Dataset, index: int) -> np.ndarray:
     value = np.asarray(dataset[index])
     image = decode_jpeg(value) if value.ndim == 1 else value
     if image.dtype != np.uint8 or image.ndim != 3 or image.shape[-1] != 3:
-        raise ValueError(f"{dataset.file.filename}: invalid RGB frame {dataset.name}[{index}] {image.shape} {image.dtype}")
+        raise ValueError(
+            f"{dataset.file.filename}: invalid RGB frame {dataset.name}[{index}] {image.shape} {image.dtype}"
+        )
     return np.ascontiguousarray(image)
 
 
@@ -98,8 +95,7 @@ def _inspect_source(episodes: Iterable[EpisodeInfo]) -> tuple[int, dict[str, tup
             elif frequency != episode_frequency:
                 raise ValueError(f"mixed frequencies are unsupported: {frequency} and {episode_frequency}")
             episode_cameras = {
-                name: tuple(_image(dataset, 0).shape[:2])
-                for name, dataset in _camera_datasets(handle).items()
+                name: tuple(_image(dataset, 0).shape[:2]) for name, dataset in _camera_datasets(handle).items()
             }
             if not episode_cameras:
                 raise ValueError(f"{episode.path}: no RGB cameras found")

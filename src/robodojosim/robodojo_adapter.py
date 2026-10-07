@@ -60,8 +60,7 @@ class RoboDojoSceneAdapter:
         )
         if len(objects) != 1:
             raise RuntimeError(
-                f"expected one rigid object for label {label!r} "
-                f"(instance {instance_name!r}), found {list(objects)}"
+                f"expected one rigid object for label {label!r} (instance {instance_name!r}), found {list(objects)}"
             )
         obj = next(iter(objects.values()))
         try:
@@ -78,8 +77,7 @@ class RoboDojoSceneAdapter:
         )
         if len(objects) != 1:
             raise RuntimeError(
-                f"expected one geometry object for label {label!r} "
-                f"(instance {instance_name!r}), found {list(objects)}"
+                f"expected one geometry object for label {label!r} (instance {instance_name!r}), found {list(objects)}"
             )
         obj = next(iter(objects.values()))
         state = obj.get_state(is_relative=True)

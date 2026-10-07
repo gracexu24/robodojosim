@@ -37,6 +37,22 @@ def bbox_world_center(object_pose: Pose, bbox: np.ndarray | None) -> np.ndarray:
     return object_pose.position + quaternion_rotation_matrix(object_pose.quaternion) @ local_center
 
 
+def bbox_world_corners(object_pose: Pose, bbox: np.ndarray) -> np.ndarray:
+    """Return all eight mesh-local AABB corners transformed to world space."""
+
+    bounds = np.asarray(bbox, dtype=np.float64)
+    minimum, maximum = bounds[:3], bounds[3:]
+    corners = np.array(
+        [
+            [x, y, z]
+            for x in (minimum[0], maximum[0])
+            for y in (minimum[1], maximum[1])
+            for z in (minimum[2], maximum[2])
+        ]
+    )
+    return object_pose.position + corners @ quaternion_rotation_matrix(object_pose.quaternion).T
+
+
 def quaternion_multiply(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     """Hamilton product for qw, qx, qy, qz quaternions."""
 
@@ -109,9 +125,7 @@ def quaternion_slerp(q0: np.ndarray, q1: np.ndarray, fraction: float) -> np.ndar
         return result / np.linalg.norm(result)
     theta = math.acos(dot)
     sin_theta = math.sin(theta)
-    return (math.sin((1 - fraction) * theta) / sin_theta) * q0 + (
-        math.sin(fraction * theta) / sin_theta
-    ) * q1
+    return (math.sin((1 - fraction) * theta) / sin_theta) * q0 + (math.sin(fraction * theta) / sin_theta) * q1
 
 
 def interpolate_pose(start: Pose, target: Pose, max_translation_step: float) -> list[Pose]:
@@ -127,9 +141,6 @@ def interpolate_pose(start: Pose, target: Pose, max_translation_step: float) -> 
 
 
 def bbox_top(object_pose: Pose, bbox: np.ndarray | None, fallback_height: float) -> float:
-    # The object assets used here are upright and the dustbin pose is fixed.  A
-    # full oriented-box transform is unnecessary for the shipped task, but the
-    # local z extent is still preferable to a hard-coded asset height.
     if bbox is None:
         return float(object_pose.position[2] + fallback_height)
-    return float(object_pose.position[2] + max(0.0, float(bbox[5])))
+    return float(np.max(bbox_world_corners(object_pose, bbox)[:, 2]))

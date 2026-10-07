@@ -128,9 +128,7 @@ class EpisodeRecorder:
                     if key in {"intrinsic_matrix", "extrinsic_matrix", "shape"}:
                         self._write_once(f"vision/{camera}/{key}", value)
                     elif key in {"color", "colors"} and self.jpeg_quality is not None:
-                        self._append_encoded_image(
-                            f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value
-                        )
+                        self._append_encoded_image(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
                     else:
                         self._append_value(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
         if teacher:
@@ -183,7 +181,11 @@ class EpisodeRecorder:
         group = self._file.require_group(group_path)
         if isinstance(value, (str, bytes)) or value is None:
             dtype = h5py.string_dtype("utf-8")
-            text = "" if value is None else (value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value)
+            text = (
+                ""
+                if value is None
+                else (value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value)
+            )
             if name not in group:
                 dataset = group.create_dataset(name, shape=(0,), maxshape=(None,), dtype=dtype, chunks=True)
             else:
@@ -272,7 +274,9 @@ def validate_episode(path: str | Path) -> list[str]:
                     errors.append(f"missing /{key}")
             if not bool(handle.attrs.get("complete", False)):
                 errors.append("file is not marked complete")
-            state_lengths = [dataset.shape[0] for dataset in handle.get("state", {}).values() if isinstance(dataset, h5py.Dataset)]
+            state_lengths = [
+                dataset.shape[0] for dataset in handle.get("state", {}).values() if isinstance(dataset, h5py.Dataset)
+            ]
             action_lengths = [
                 dataset.shape[0] for dataset in handle.get("action", {}).values() if isinstance(dataset, h5py.Dataset)
             ]

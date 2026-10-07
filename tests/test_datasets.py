@@ -57,14 +57,11 @@ def test_world_model_stats_and_splits_include_complete_failed_interactions(tmp_p
     assert stats.complete_episodes == 2
     assert stats.complete_seconds == 0.08
     assert stats.successful_episodes == 1
-    split_path = write_splits(
-        tmp_path, profile="world_model", train_ratio=0.5, validation_ratio=0.0
-    )
+    split_path = write_splits(tmp_path, profile="world_model", train_ratio=0.5, validation_ratio=0.0)
     payload = json.loads(split_path.read_text())
-    episodes = {
-        name for split in payload["splits"].values() for name in split["episodes"]
-    }
+    episodes = {name for split in payload["splits"].values() for name in split["episodes"]}
     assert episodes == {"episode_000000.hdf5", "episode_000001.hdf5"}
+
 
 def test_campaign_targets_and_dry_run(tmp_path, capsys):
     stats = summarize_dataset(tmp_path, profile="world_model")

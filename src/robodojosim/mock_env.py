@@ -39,8 +39,10 @@ class MockBottleEnv:
     @property
     def success(self) -> bool:
         arms_home = all(np.linalg.norm(self.arms[arm].position - self.home[arm].position) < 1e-6 for arm in self.arms)
-        return all(bottle.in_bin for bottle in self.bottles.values()) and arms_home and all(
-            value > 0.8 for value in self.grippers.values()
+        return (
+            all(bottle.in_bin for bottle in self.bottles.values())
+            and arms_home
+            and all(value > 0.8 for value in self.grippers.values())
         )
 
     def snapshot(self) -> SceneSnapshot:
@@ -79,7 +81,9 @@ class MockBottleEnv:
         for arm, label in self.attachments.items():
             if label is not None:
                 bottle = self.bottles[label]
-                bottle.state = ObjectState(Pose(self.arms[arm].position, bottle.state.pose.quaternion), bottle.state.bbox)
+                bottle.state = ObjectState(
+                    Pose(self.arms[arm].position, bottle.state.pose.quaternion), bottle.state.bbox
+                )
         for arm in ("left", "right"):
             if old_grippers[arm] < 0.2 and self.grippers[arm] > 0.8:
                 self._release(arm)

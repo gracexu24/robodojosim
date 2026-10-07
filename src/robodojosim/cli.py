@@ -50,7 +50,9 @@ def _dry_run(args: argparse.Namespace) -> int:
             }
         )
     print(json.dumps(results, indent=2))
-    return 0 if all(item.get("skipped") or (item["success"] and not item["validation_errors"]) for item in results) else 1
+    return (
+        0 if all(item.get("skipped") or (item["success"] and not item["validation_errors"]) for item in results) else 1
+    )
 
 
 def _validate(args: argparse.Namespace) -> int:

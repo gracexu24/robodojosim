@@ -97,9 +97,12 @@ def test_export_lerobot_includes_failed_complete_world_model_episode(tmp_path):
         dataset_factory=factory,
     )
     assert len(made[0].episodes) == 1
-    assert export_lerobot(
-        tmp_path,
-        output,
-        profile="world_model",
-        dataset_factory=factory,
-    ) == output
+    assert (
+        export_lerobot(
+            tmp_path,
+            output,
+            profile="world_model",
+            dataset_factory=factory,
+        )
+        == output
+    )

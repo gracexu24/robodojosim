@@ -100,7 +100,9 @@ class ControllerConfig:
             raise ValueError("drop_hold_steps cannot be negative")
         if self.bottle_limit is not None and self.bottle_limit < 1:
             raise ValueError("bottle_limit must be positive when provided")
-        if self.bottle_labels is not None and (not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)):
+        if self.bottle_labels is not None and (
+            not self.bottle_labels or len(set(self.bottle_labels)) != len(self.bottle_labels)
+        ):
             raise ValueError("bottle_labels must be non-empty and unique when provided")
         if np.any(np.asarray(self.workspace_min) >= np.asarray(self.workspace_max)):
             raise ValueError("workspace_min must be below workspace_max")
@@ -214,9 +216,7 @@ class BottleController:
             for coordinate in snapshot.bottles[name].pose.position[:2]
         ]
         rng = np.random.default_rng(np.random.SeedSequence([self.trajectory_variant, *layout_words]))
-        dustbin_top = bbox_top(
-            snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
-        )
+        dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
 
         # Left-side bottles first keeps the bin-side workspace uncluttered.
         bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
@@ -242,9 +242,7 @@ class BottleController:
             bottle = snapshot.bottles[label]
             bottle_center = bbox_world_center(bottle.pose, bottle.bbox)
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
-            drop_position += np.asarray(
-                getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64
-            )
+            drop_position += np.asarray(getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64)
             orientation = self._orientation(pick_arm, snapshot)
             if self.config.align_grasp_to_bbox_major_axis:
                 orientation = align_tool_yaw_to_bbox_major_axis(
@@ -252,11 +250,7 @@ class BottleController:
                     bottle.pose,
                     bottle.bbox,
                 )
-            if (
-                self.config.world_model_movements
-                and bottle_index == 0
-                and rng.random() < self.config.push_probability
-            ):
+            if self.config.world_model_movements and bottle_index == 0 and rng.random() < self.config.push_probability:
                 self._append_push(events, poses, grippers, bottle_center, orientation, pick_arm, label, rng)
                 continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
@@ -268,9 +262,7 @@ class BottleController:
                 # A tool-center offset from the live bounding-box center is
                 # invariant to that orientation, unlike a local-z "top".
                 grasp_position[2] = bottle_center[2] + self.config.grasp_center_offset
-            grasp_position += np.asarray(
-                getattr(self.config, f"{pick_arm}_grasp_position_offset"), dtype=np.float64
-            )
+            grasp_position += np.asarray(getattr(self.config, f"{pick_arm}_grasp_position_offset"), dtype=np.float64)
             pregrasp = Pose(
                 grasp_position + np.array([0.0, 0.0, self.config.approach_height + height_delta]), orientation
             )
@@ -293,7 +285,9 @@ class BottleController:
                 ]
             )
             grippers[pick_arm] = self.config.closed_value
-            events.append(self._event(Phase.CLOSE, poses, grippers, pick_arm, grasp, label, self.config.gripper_hold_steps))
+            events.append(
+                self._event(Phase.CLOSE, poses, grippers, pick_arm, grasp, label, self.config.gripper_hold_steps)
+            )
             events.append(
                 self._event(
                     Phase.LIFT,
@@ -308,9 +302,7 @@ class BottleController:
             if self.config.world_model_movements:
                 hold_steps = int(rng.integers(self.config.hold_steps_min, self.config.hold_steps_max + 1))
                 events.append(self._event(Phase.HOLD, poses, grippers, pick_arm, lift, label, hold_steps))
-                waypoint_count = int(
-                    rng.integers(self.config.carry_waypoints_min, self.config.carry_waypoints_max + 1)
-                )
+                waypoint_count = int(rng.integers(self.config.carry_waypoints_min, self.config.carry_waypoints_max + 1))
                 for _ in range(waypoint_count):
                     offset = np.array(
                         [
@@ -364,9 +356,7 @@ class BottleController:
                         if self.config.grasp_center_offset is None
                         else self.config.grasp_center_offset
                     )
-                    staged_grasp_position += np.asarray(
-                        self.config.left_grasp_position_offset, dtype=np.float64
-                    )
+                    staged_grasp_position += np.asarray(self.config.left_grasp_position_offset, dtype=np.float64)
                     staged_grasp = Pose(staged_grasp_position, left_orientation)
                     staged_pregrasp = staged_grasp.at(
                         staged_grasp.position + np.array([0.0, 0.0, self.config.approach_height])
@@ -381,12 +371,8 @@ class BottleController:
                         ),
                         left_orientation,
                     )
-                    events.append(
-                        self._event(Phase.APPROACH, poses, grippers, "left", staged_overhead, label)
-                    )
-                    events.append(
-                        self._event(Phase.APPROACH, poses, grippers, "left", staged_pregrasp, label)
-                    )
+                    events.append(self._event(Phase.APPROACH, poses, grippers, "left", staged_overhead, label))
+                    events.append(self._event(Phase.APPROACH, poses, grippers, "left", staged_pregrasp, label))
                     events.append(self._event(Phase.GRASP, poses, grippers, "left", staged_grasp, label))
                     grippers["left"] = self.config.closed_value
                     events.append(
@@ -400,9 +386,7 @@ class BottleController:
                             self.config.gripper_hold_steps,
                         )
                     )
-                    left_lift = staged_grasp.at(
-                        staged_grasp.position + np.array([0.0, 0.0, self.config.lift_height])
-                    )
+                    left_lift = staged_grasp.at(staged_grasp.position + np.array([0.0, 0.0, self.config.lift_height]))
                     events.append(
                         self._event(
                             Phase.LIFT,
@@ -447,9 +431,7 @@ class BottleController:
                         right_handover.position + np.array([0.12, -0.05, self.config.retreat_height])
                     )
                     events.append(self._event(Phase.RETREAT, poses, grippers, "right", right_retreat, label))
-                    left_lift = left_handover.at(
-                        left_handover.position + np.array([0.0, 0.0, self.config.lift_height])
-                    )
+                    left_lift = left_handover.at(left_handover.position + np.array([0.0, 0.0, self.config.lift_height]))
                     events.append(self._event(Phase.LIFT, poses, grippers, "left", left_lift, label))
                 carrying_arm = "left"
 
@@ -573,9 +555,7 @@ class BottleController:
             for waypoint in waypoints:
                 action_poses = dict(current)
                 action_poses[arm] = waypoint
-                result.append(
-                    self._planned_action(action_poses, current_grippers, event.phase, event.bottle, arm)
-                )
+                result.append(self._planned_action(action_poses, current_grippers, event.phase, event.bottle, arm))
                 current[arm] = waypoint
             current_grippers = dict(event.grippers)
             for _ in range(event.repeat):
