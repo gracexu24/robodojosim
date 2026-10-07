@@ -50,6 +50,7 @@ class ControllerConfig:
     grasp_clearance: float = 0.015
     grasp_center_offset: float | None = None
     grasp_max_center_offset: float | None = None
+    upright_grasp_height_fraction: float | None = None
     drop_clearance: float = 0.18
     rim_clearance: float = 0.03
     retreat_height: float = 0.14
@@ -136,6 +137,8 @@ class ControllerConfig:
             raise ValueError("bottle_limit must be positive when provided")
         if self.grasp_max_center_offset is not None and self.grasp_max_center_offset <= 0:
             raise ValueError("grasp_max_center_offset must be positive when provided")
+        if self.upright_grasp_height_fraction is not None and not 0 < self.upright_grasp_height_fraction <= 1:
+            raise ValueError("upright_grasp_height_fraction must be between zero and one")
         if self.horizontal_bottle_half_height_max <= 0:
             raise ValueError("horizontal_bottle_half_height_max must be positive")
         if self.bottle_labels is not None and (
@@ -300,11 +303,21 @@ class BottleController:
                     )
                 continue
             top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
+            bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_position = bottle_center.copy()
             if self.config.grasp_center_offset is None:
                 center_offset = top + self.config.grasp_clearance - bottle_center[2]
                 if self.config.grasp_max_center_offset is not None:
                     center_offset = min(center_offset, self.config.grasp_max_center_offset)
+                world_half_height = (top - bottle_bottom) / 2.0
+                if (
+                    self.config.upright_grasp_height_fraction is not None
+                    and world_half_height > self.config.horizontal_bottle_half_height_max
+                ):
+                    center_offset = min(
+                        center_offset,
+                        world_half_height * self.config.upright_grasp_height_fraction,
+                    )
                 grasp_position[2] = bottle_center[2] + center_offset
             else:
                 # RoboDojo's bottle assets include upright and sideways poses.
@@ -322,7 +335,6 @@ class BottleController:
             # sideways bottle below the rim, so a lateral transit strikes the
             # outside wall.  Preserve the grasp-to-object transform and raise
             # the complete oriented bound above the rim before translating.
-            bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
             grasp_to_bottom = max(0.0, float(grasp_position[2] - bottle_bottom))
             rim_safe_tool_z = dustbin_top + self.config.rim_clearance + grasp_to_bottom
             drop_position[2] = max(drop_position[2], rim_safe_tool_z)

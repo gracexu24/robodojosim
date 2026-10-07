@@ -8,6 +8,7 @@
   "grasp_clearance": 0.05,
   "grasp_center_offset": null,
   "grasp_max_center_offset": 0.09,
+  "upright_grasp_height_fraction": 0.75,
   "left_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_horizontal_grasp_position_offset": [0.0, 0.0, 0.03],

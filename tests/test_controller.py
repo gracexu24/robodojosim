@@ -15,6 +15,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         config = ControllerConfig.from_json(config_root / name)
         assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.grasp_max_center_offset == 0.09
+        assert config.upright_grasp_height_fraction == 0.75
 
 
 def test_pose_normalizes_quaternion():
@@ -218,6 +219,34 @@ def test_grasp_target_caps_height_above_center_for_upright_bottle():
     expected = original.pose.position.copy()
     expected[2] += 0.10
     np.testing.assert_allclose(grasp, expected)
+
+
+def test_upright_grasp_height_scales_with_oriented_half_height():
+    snapshot = MockBottleEnv(seed=1).snapshot()
+    bottles = dict(snapshot.bottles)
+    original = bottles["bottle3"]
+
+    def target(half_height):
+        bottles["bottle3"] = ObjectState(
+            Pose(original.pose.position, [1.0, 0.0, 0.0, 0.0]),
+            np.array([-0.03, -0.03, -half_height, 0.03, 0.03, half_height]),
+        )
+        scene = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+        controller = BottleController(
+            ControllerConfig(
+                grasp_clearance=0.05,
+                grasp_max_center_offset=0.09,
+                upright_grasp_height_fraction=0.75,
+                bottle_labels=("bottle3",),
+                stop_after_lift=True,
+            )
+        )
+        controller.reset(scene)
+        steps = [controller.next_action() for _ in range(controller.planned_action_count)]
+        return next(step.action["right_ee_pose"][2] for step in reversed(steps) if step.phase is Phase.GRASP)
+
+    assert target(0.085) == pytest.approx(original.pose.position[2] + 0.06375)
+    assert target(0.12) == pytest.approx(original.pose.position[2] + 0.09)
 
 
 def test_grasp_yaw_aligns_tool_fingers_with_projected_bbox_major_axis():
