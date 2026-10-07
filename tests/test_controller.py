@@ -14,7 +14,8 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
     for name in ("bottle_task.json", "policy_data.json", "world_model_data.json"):
         config = ControllerConfig.from_json(config_root / name)
         assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
-        assert config.right_grasp_position_offset == [0.004, 0.015, 0.0]
+        assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
+        assert config.grasp_settle_steps == 0
         assert config.grasp_max_center_offset == 0.09
 
 
