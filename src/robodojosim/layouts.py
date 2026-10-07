@@ -12,10 +12,10 @@ from pathlib import Path
 # body diameters the X5 gripper can close around.  Center heights, masses, and
 # stable placement quaternions come from each installed asset's metadata.json.
 _TRAINING_PLASTIC_BOTTLES = (
-    (0, 0.122519, 0.19, (1.0, -0.0001, -0.0002, -0.0003)),
-    (2, 0.122513, 0.19, (1.0, 0.0001, 0.0001, -0.0005)),
-    (25, 0.032009, 0.15, (0.7071, 0.0001, 0.7071, 0.0001)),
-    (55, 0.114377, 0.15, (0.9999, -0.0123, 0.012, 0.0014)),
+    (0, 0.031709, 0.19, (0.4995, -0.5003, 0.5005, 0.4997)),
+    (2, 0.031733, 0.19, (-0.4993, 0.5005, -0.5004, -0.4998)),
+    (25, 0.032006, 0.15, (0.5001, -0.5, 0.5, 0.4999)),
+    (55, 0.040278, 0.15, (0.5006, -0.4993, 0.4995, 0.5006)),
 )
 
 
@@ -82,7 +82,7 @@ def configure_training_dustbin(
     target_y: float = -0.10,
     width_scale: float = 0.65,
     depth_scale: float = 0.6,
-    height_scale: float = 0.45,
+    height_scale: float = 0.15,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
@@ -94,12 +94,14 @@ def configure_training_dustbin(
     (x=0, y=-0.10). The four bottles are placed in collision-separated source
     slots, two per arm, that leave room for an open gripper. Mislabeled caps,
     cans, and metal flasks are deterministically replaced by real plastic
-    drink bottles and placed upright. Original JSON is backed up by
+    drink bottles and placed in their stable side poses. Original JSON is backed up by
     :func:`_write_layout`.
 
-    The 0.45 height scale is deliberate: RoboDojo's reward requires the
+    The 0.15 height scale is deliberate: RoboDojo's reward requires the
     bottle's complete 3D bounding box to fit inside the dustbin bounding box.
-    A shallow tray can look correct but can never satisfy that predicate.
+    All selected bottles are 6--8 cm tall in their stable side poses, so the
+    9.75 cm tabletop bin remains reward-valid while staying below both arms'
+    measured carry workspace.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.

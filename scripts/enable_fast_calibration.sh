@@ -31,4 +31,4 @@ if ! grep -q 'ROBODOJOSIM_CALIBRATION_FAST' "${OBS_TARGET}"; then
     git -C "${ROBODOJO_ROOT}" apply --check "${OBS_PATCH}"
     git -C "${ROBODOJO_ROOT}" apply "${OBS_PATCH}"
 fi
-echo "Installed fast calibration toggle. Set ROBODOJOSIM_CALIBRATION_FAST=1 for state-only checks."
+echo "Installed camera-free calibration toggle. Set ROBODOJOSIM_CALIBRATION_FAST=1 for state-only checks."

@@ -9,7 +9,7 @@ diff --git a/scripts/eval_policy.sh b/scripts/eval_policy.sh
 +if [[ "${ROBODOJOSIM_CALIBRATION_FAST:-0}" == "1" ]]; then
 +  camera_args=()
 +  KIT_ENABLE_EXTS=()
-+  echo "[INFO] Fast calibration mode: camera sensors and evaluation video are disabled"
++  echo "[INFO] Camera-free calibration mode: camera sensors and evaluation video are disabled"
 +fi
 +
  KIT_ARGS=""

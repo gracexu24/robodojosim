@@ -80,14 +80,15 @@ bash scripts/run_collection.sh \
 with `Display Active: Enabled`; otherwise Kit can create an X11 window but repeatedly report that its backbuffers are
 not initialized. `ROBODOJOSIM_POLICY_GPU_ID` independently selects the policy process GPU and also defaults to `0`.
 
-For state-only reward and controller calibration, install and enable the optional fast path:
+For state-only reward and controller diagnostics, install and enable the optional camera-free path:
 
 ```bash
 bash scripts/enable_fast_calibration.sh /workspace/RoboDojo
 export ROBODOJOSIM_CALIBRATION_FAST=1
 ```
 
-Unset the variable before collecting any LeRobot-bound data because fast mode intentionally omits RGB observations.
+This saves disk and video-encoding work but does not materially accelerate the IK/physics loop on the tested system.
+Unset the variable before collecting any LeRobot-bound data because it intentionally omits RGB observations.
 
 ## 4. Calibrate
 
