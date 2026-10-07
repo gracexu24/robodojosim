@@ -42,6 +42,7 @@ class SafetyError(RuntimeError):
 @dataclass(frozen=True)
 class ControllerConfig:
     max_translation_step: float = 0.035
+    max_grasp_translation_step: float | None = None
     max_lift_translation_step: float = 0.010
     max_carry_translation_step: float = 0.015
     max_home_translation_step: float | None = None
@@ -111,6 +112,8 @@ class ControllerConfig:
     def __post_init__(self) -> None:
         if self.max_translation_step <= 0:
             raise ValueError("max_translation_step must be positive")
+        if self.max_grasp_translation_step is not None and self.max_grasp_translation_step <= 0:
+            raise ValueError("max_grasp_translation_step must be positive when provided")
         if self.max_lift_translation_step <= 0 or self.max_carry_translation_step <= 0:
             raise ValueError("loaded translation steps must be positive")
         if self.max_home_translation_step is not None and self.max_home_translation_step <= 0:
@@ -688,6 +691,8 @@ class BottleController:
             loaded_phases = {Phase.HOLD, Phase.CARRY, Phase.TRANSIT, Phase.HANDOVER}
             if event.phase is Phase.HOME and self.config.max_home_translation_step is not None:
                 max_step = self.config.max_home_translation_step
+            elif event.phase is Phase.GRASP and self.config.max_grasp_translation_step is not None:
+                max_step = self.config.max_grasp_translation_step
             elif event.phase is Phase.LIFT and current_grippers[arm] == self.config.closed_value:
                 max_step = self.config.max_lift_translation_step
             elif event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value:

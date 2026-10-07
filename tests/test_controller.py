@@ -522,6 +522,30 @@ def test_home_specific_step_size_does_not_change_loaded_motion_limits():
                 assert np.max(np.linalg.norm(np.diff(positions, axis=0), axis=1)) <= maximum + 1e-6
 
 
+def test_grasp_specific_step_size_preserves_fast_free_space_approach():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_limit=1,
+            direct_right_drop=True,
+            max_translation_step=0.07,
+            max_grasp_translation_step=0.025,
+        )
+    )
+    controller.reset(snapshot)
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    active_arm = next(step.active_arm for step in planned if step.phase is Phase.GRASP)
+    grasp_positions = np.array(
+        [
+            step.action[f"{active_arm}_ee_pose"][:3]
+            for step in planned
+            if step.phase is Phase.GRASP and step.active_arm == active_arm
+        ]
+    )
+    assert len(grasp_positions) > 1
+    assert np.max(np.linalg.norm(np.diff(grasp_positions, axis=0), axis=1)) <= 0.025 + 1e-6
+
+
 def test_home_completion_hover_stays_within_reward_tolerance():
     snapshot = MockBottleEnv(seed=0).snapshot()
     controller = BottleController(
