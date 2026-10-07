@@ -59,6 +59,8 @@ class ControllerConfig:
     use_overhead_approach: bool = True
     left_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     right_grasp_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    left_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    right_drop_position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     workspace_min: tuple[float, float, float] = (-0.85, -0.55, 0.30)
     workspace_max: tuple[float, float, float] = (0.75, 0.40, 1.35)
     # These are tool-center positions, not bottle positions. They are expected
@@ -235,6 +237,9 @@ class BottleController:
             )
             bottle = snapshot.bottles[label]
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
+            drop_position += np.asarray(
+                getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64
+            )
             orientation = self._orientation(pick_arm, snapshot)
             if (
                 self.config.world_model_movements

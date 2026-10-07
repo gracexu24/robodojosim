@@ -202,3 +202,26 @@ def test_direct_right_drop_avoids_handoff_for_central_bin_variant():
     phases = [controller.next_action().phase for _ in range(controller.planned_action_count)]
     assert Phase.HANDOVER not in phases
     assert Phase.TRANSIT in phases
+
+
+def test_arm_specific_drop_position_offsets_are_applied():
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0", "bottle3"),
+            direct_right_drop=True,
+            left_drop_position_offset=(-0.15, 0.01, 0.02),
+            right_drop_position_offset=(0.12, -0.01, 0.03),
+        )
+    )
+    controller.reset(snapshot)
+    transit_targets = {}
+    while not controller.done:
+        step = controller.next_action()
+        if step.phase is Phase.TRANSIT:
+            transit_targets[step.bottle] = step.action[f"{step.active_arm}_ee_pose"][:3]
+    dustbin = snapshot.dustbin.pose.position
+    np.testing.assert_allclose(transit_targets["bottle0"][:2], dustbin[:2] + [-0.15, 0.01])
+    np.testing.assert_allclose(transit_targets["bottle3"][:2], dustbin[:2] + [0.12, -0.01])
+    assert transit_targets["bottle0"][2] > dustbin[2]
+    assert transit_targets["bottle3"][2] > dustbin[2]

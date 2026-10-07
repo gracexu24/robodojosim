@@ -8,6 +8,8 @@
   "grasp_center_offset": 0.055,
   "left_grasp_position_offset": [0.0, 0.0, 0.0],
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
+  "left_drop_position_offset": [-0.15, 0.0, 0.0],
+  "right_drop_position_offset": [0.0, 0.0, 0.0],
   "drop_clearance": 0.18,
   "dustbin_fallback_half_height": 0.065,
   "retreat_height": 0.07,
