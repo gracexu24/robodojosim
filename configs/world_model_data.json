@@ -10,7 +10,7 @@
   "right_grasp_position_offset": [0.0, 0.0, 0.0],
   "drop_clearance": 0.18,
   "dustbin_fallback_half_height": 0.1625,
-  "retreat_height": 0.14,
+  "retreat_height": 0.07,
   "direct_left_max_x": 0.08,
   "direct_right_drop": true,
   "gripper_hold_steps": 5,
