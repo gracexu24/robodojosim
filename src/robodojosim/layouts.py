@@ -95,36 +95,15 @@ def configure_training_dustbin(
     for resolved, path in sorted(_layout_candidates(root).items(), key=lambda item: str(item[0])):
         with resolved.open(encoding="utf-8") as handle:
             data = json.load(handle)
+        if data.get("robodojosim", {}).get("training_layout_version") == 1:
+            continue
         bottles = data.get("Rigid", {}).get("bottle", [])
-        needs_bottle_relayout = any(
-            bottle.get("xlim") in ([0.05, 0.45], [-0.35, 0.05], [0.30, 0.48], [-0.38, -0.30])
-            or bottle.get("ylim") in ([0.10, 0.20], [0.06, 0.12])
-            for bottle in bottles
-        )
         dustbins = data.get("Geometry", {}).get("dustbin", [])
-        matches = []
-        for item in dustbins:
-            if item.get("category_idx") != 0 or item.get("label") != "dustbin":
-                continue
-            plane = item.get("relative_plane", "Ground").lower()
-            position = item.get("default_pos", [None, None])
-            scale = item.get("scale", [1.0, 1.0, 1.0])
-            public_or_floor_center = plane == "ground" and position[0] in (-0.63, float(target_x))
-            old_tabletop_variant = (
-                plane == "table"
-                and position[0] == float(target_x)
-                and position[1] in (0.30, float(target_y))
-                and scale
-                in ([1.0, 1.0, 0.5], [1.0, 1.0, 0.2], [1.0, 0.6, 0.2], [1.0, 0.4, 0.2])
-            )
-            desired_bin_needs_bottle_migration = (
-                plane == "table"
-                and position[:2] == [float(target_x), float(target_y)]
-                and scale == [float(width_scale), float(depth_scale), float(height_scale)]
-                and needs_bottle_relayout
-            )
-            if public_or_floor_center or old_tabletop_variant or desired_bin_needs_bottle_migration:
-                matches.append(item)
+        matches = [
+            item
+            for item in dustbins
+            if item.get("category_idx") == 0 and item.get("label") == "dustbin"
+        ]
         if not matches:
             continue
         changed.append(path)
@@ -144,38 +123,44 @@ def configure_training_dustbin(
             dustbin["relative_plane"] = "Table"
             dustbin["scale"] = [float(width_scale), float(depth_scale), float(height_scale)]
             dustbin.setdefault("physics", {})["collision"] = True
-        for bottle in bottles:
-            xlim = bottle.get("xlim")
-            ylim = bottle.get("ylim")
-            position = bottle.get("default_pos")
+        backup = resolved.with_suffix(resolved.suffix + ".robodojosim-original")
+        source_bottles = bottles
+        if backup.exists():
+            with backup.open(encoding="utf-8") as handle:
+                source_bottles = json.load(handle).get("Rigid", {}).get("bottle", bottles)
+        for index, bottle in enumerate(bottles):
+            source = source_bottles[index] if index < len(source_bottles) else bottle
+            position = list(source.get("default_pos", bottle.get("default_pos", [])))
             if not isinstance(position, list) or len(position) < 2:
                 continue
-            if xlim == [0.30, 0.48]:
+            xlim = source.get("xlim")
+            ylim = source.get("ylim")
+            if not backup.exists() and xlim == [0.30, 0.48]:
                 fraction = (float(position[0]) - 0.30) / 0.18
                 position[0] = round(0.05 + 0.40 * fraction, 6)
                 xlim = [0.05, 0.45]
-                bottle["xlim"] = xlim
-            elif xlim == [-0.38, -0.30]:
+            elif not backup.exists() and xlim == [-0.38, -0.30]:
                 fraction = (float(position[0]) + 0.38) / 0.08
                 position[0] = round(-0.35 + 0.40 * fraction, 6)
                 xlim = [-0.35, 0.05]
-                bottle["xlim"] = xlim
-            if xlim == [0.05, 0.45]:
-                fraction = (float(position[0]) - 0.05) / 0.40
-                position[0] = round(0.24 + 0.21 * fraction, 6)
-                bottle["xlim"] = [0.24, 0.45]
-            elif xlim == [-0.35, 0.05]:
-                fraction = (float(position[0]) + 0.35) / 0.40
-                position[0] = round(-0.37 + 0.08 * fraction, 6)
-                bottle["xlim"] = [-0.37, -0.29]
-            if ylim == [0.10, 0.20]:
+            if not backup.exists() and ylim == [0.10, 0.20]:
                 fraction = (float(position[1]) - 0.10) / 0.10
                 position[1] = round(-0.25 + 0.27 * fraction, 6)
-                bottle["ylim"] = [-0.25, 0.02]
-            elif ylim == [0.06, 0.12]:
+                ylim = [-0.25, 0.02]
+            elif not backup.exists() and ylim == [0.06, 0.12]:
                 fraction = (float(position[1]) - 0.06) / 0.06
                 position[1] = round(-0.25 + 0.27 * fraction, 6)
-                bottle["ylim"] = [-0.25, 0.02]
+                ylim = [-0.25, 0.02]
+            if xlim == [0.05, 0.45] and float(position[0]) < 0.24:
+                position[0] = 0.24
+            elif xlim == [-0.35, 0.05] and float(position[0]) > -0.29:
+                position[0] = -0.29
+            bottle["default_pos"] = position
+            if xlim is not None:
+                bottle["xlim"] = xlim
+            if ylim is not None:
+                bottle["ylim"] = ylim
+        data["robodojosim"] = {"training_layout_version": 1}
         _write_layout(resolved, data)
     return changed
 

@@ -76,12 +76,13 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
     assert updated["Geometry"]["dustbin"][0]["scale"] == [0.8, 0.4, 0.2]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
-    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.345, -0.1]
-    assert updated["Rigid"]["bottle"][0]["xlim"] == [0.24, 0.45]
+    assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [0.25, -0.1]
+    assert updated["Rigid"]["bottle"][0]["xlim"] == [0.05, 0.45]
     assert updated["Rigid"]["bottle"][0]["ylim"] == [-0.25, 0.02]
-    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.33, -0.1]
-    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.37, -0.29]
+    assert updated["Rigid"]["bottle"][1]["default_pos"][:2] == [-0.29, -0.1]
+    assert updated["Rigid"]["bottle"][1]["xlim"] == [-0.35, 0.05]
     assert updated["Rigid"]["bottle"][1]["ylim"] == [-0.25, 0.02]
+    assert updated["robodojosim"]["training_layout_version"] == 1
     assert centralize_dustbin(tmp_path) == []
 
 
@@ -179,7 +180,7 @@ def test_training_dustbin_migrates_failed_outer_and_rear_lane_variants(tmp_path)
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
     bottle = updated["Rigid"]["bottle"][0]
-    assert bottle["default_pos"][:2] == [0.345, -0.099999]
-    assert bottle["xlim"] == [0.24, 0.45]
+    assert bottle["default_pos"][:2] == [0.25, -0.099999]
+    assert bottle["xlim"] == [0.05, 0.45]
     assert bottle["ylim"] == [-0.25, 0.02]
     assert centralize_dustbin(tmp_path) == []
