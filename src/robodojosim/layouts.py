@@ -68,7 +68,7 @@ def configure_training_dustbin(
     *,
     target_x: float = 0.0,
     target_y: float = 0.30,
-    height_scale: float = 0.5,
+    height_scale: float = 0.2,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
@@ -76,7 +76,7 @@ def configure_training_dustbin(
     The public layout's 47 cm-wide floor bin sits at x=-0.63, outside the
     right arm's measured top-down workspace. Merely moving that full-height
     bin to x=0 intersects the table. The training variant therefore preserves
-    the bin's full opening, halves only its height, and fixes its base to the
+    the bin's full opening, reduces only its height to a 13 cm receptacle, and fixes its base to the
     rear of the tabletop. Original JSON is backed up by :func:`_write_layout`.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
@@ -92,14 +92,21 @@ def configure_training_dustbin(
         with resolved.open(encoding="utf-8") as handle:
             data = json.load(handle)
         dustbins = data.get("Geometry", {}).get("dustbin", [])
-        matches = [
-            item
-            for item in dustbins
-            if item.get("category_idx") == 0
-            and item.get("label") == "dustbin"
-            and item.get("relative_plane", "Ground").lower() == "ground"
-            and item.get("default_pos", [None])[0] in (-0.63, float(target_x))
-        ]
+        matches = []
+        for item in dustbins:
+            if item.get("category_idx") != 0 or item.get("label") != "dustbin":
+                continue
+            plane = item.get("relative_plane", "Ground").lower()
+            position = item.get("default_pos", [None, None])
+            scale = item.get("scale", [1.0, 1.0, 1.0])
+            public_or_floor_center = plane == "ground" and position[0] in (-0.63, float(target_x))
+            old_tabletop_variant = (
+                plane == "table"
+                and position[:2] == [float(target_x), float(target_y)]
+                and scale == [1.0, 1.0, 0.5]
+            )
+            if public_or_floor_center or old_tabletop_variant:
+                matches.append(item)
         if not matches:
             continue
         changed.append(path)
@@ -110,7 +117,7 @@ def configure_training_dustbin(
         table_scale = table.get("scale", [1.0, 1.0, 0.05])
         table_top = float(table_pos[2]) + float(table_scale[2]) / 2.0
         # Asset metadata reports a 0.65 m total height around its origin.
-        bin_center_z = table_top + 0.325 * float(height_scale)
+        bin_center_z = round(table_top + 0.325 * float(height_scale), 6)
         for dustbin in matches:
             dustbin["default_pos"] = [float(target_x), float(target_y), bin_center_z]
             dustbin["xlim"] = [float(target_x), float(target_x)]
