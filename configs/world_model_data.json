@@ -4,7 +4,7 @@
   "max_lift_translation_step": 0.005,
   "max_carry_translation_step": 0.005,
   "max_home_translation_step": 0.070,
-  "approach_height": 0.30,
+  "approach_height": 0.18,
   "lift_height": 0.20,
   "grasp_clearance": 0.05,
   "grasp_center_offset": null,
@@ -17,7 +17,7 @@
   "right_drop_position_offset": [0.0, 0.05, 0.0],
   "drop_slot_offsets": [[-0.12, -0.14], [-0.12, 0.14], [0.12, 0.14], [0.12, -0.14]],
   "drop_clearance": 0.10,
-  "place_clearance": 0.015,
+  "place_clearance": null,
   "rim_clearance": 0.03,
   "dustbin_fallback_half_height": 0.0975,
   "retreat_height": 0.02,
@@ -55,5 +55,13 @@
   "carry_waypoints_min": 2,
   "carry_waypoints_max": 5,
   "carry_xy_jitter": 0.08,
-  "carry_z_jitter": 0.04
+  "carry_z_jitter": 0.04,
+  "live_pose_feedback": true,
+  "max_grasp_retries": 3,
+  "grasp_follow_tolerance": 0.045,
+  "retry_carry_translation_step": 0.005,
+  "drop_validation_half_extents": [0.29, 0.31],
+  "grasp_xy_tolerance": 0.012,
+  "grasp_vertical_residual_max": 0.055,
+  "grasp_orientation_tolerance_degrees": 12.0
 }

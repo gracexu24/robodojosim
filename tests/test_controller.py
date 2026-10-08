@@ -633,3 +633,76 @@ def test_home_completion_hover_stays_within_reward_tolerance():
     np.testing.assert_allclose(final[:2], expected[:2])
     assert final[2] == pytest.approx(expected[2] + 0.10)
     np.testing.assert_allclose(final[3:], expected[3:])
+
+
+def test_live_pose_feedback_recovers_after_a_bottle_stops_following_the_gripper():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0",),
+            bottle_limit=1,
+            stop_after_lift=True,
+            live_pose_feedback=True,
+            grasp_follow_tolerance=0.012,
+            max_grasp_retries=2,
+            max_actions=300,
+        )
+    )
+    controller.reset(env.snapshot())
+    slipped = False
+    close_count = 0
+    while True:
+        try:
+            planned = controller.next_action(env.snapshot())
+        except StopIteration:
+            break
+        if planned.phase is Phase.CLOSE:
+            close_count += 1
+        env.step(planned.action)
+        if not slipped and planned.phase is Phase.LIFT and env.attachments["left"] == "bottle0":
+            env.attachments["left"] = None
+            slipped = True
+
+    assert slipped
+    assert controller.done
+    assert controller.retry_counts == {"bottle0": 1}
+    assert close_count >= 2
+
+
+def test_live_pose_feedback_requires_a_fresh_snapshot_for_every_action():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(bottle_limit=1, stop_after_lift=True, live_pose_feedback=True)
+    )
+    controller.reset(env.snapshot())
+    with pytest.raises(RuntimeError, match="fresh scene snapshot"):
+        controller.next_action()
+
+
+def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0",),
+            bottle_limit=1,
+            live_pose_feedback=True,
+            place_clearance=0.015,
+            home_completion_height_offset=0.0,
+            workspace_min=(-0.85, -0.55, 0.10),
+            transit_entry_margin=0.10,
+            max_actions=300,
+        )
+    )
+    controller.reset(env.snapshot())
+    stages = []
+    while not controller.done:
+        try:
+            planned = controller.next_action(env.snapshot())
+        except StopIteration:
+            break
+        stages.append(controller._feedback_stage)
+        env.step(planned.action)
+
+    assert "transit_retract" in stages
+    assert "transit_lateral" in stages
+    assert env.bottles["bottle0"].in_bin

@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 
+from .geometry import quaternion_multiply, quaternion_rotation_matrix
 from .types import ObjectState, Pose, SceneSnapshot
 
 
@@ -29,6 +30,9 @@ class RoboDojoSceneAdapter:
     def __init__(self, task_env: Any, env_idx: int = 0):
         self.task_env = task_env
         self.env_idx = env_idx
+        self._objects: dict[tuple[str, str], Any] = {}
+        self._rigid_geometry: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        self._static_geometry: dict[str, ObjectState] = {}
 
     def snapshot(self, observation: Mapping[str, Any]) -> SceneSnapshot:
         state = observation["state"]
@@ -54,34 +58,59 @@ class RoboDojoSceneAdapter:
         return SceneSnapshot(arms, grippers, bottles, dustbin, str(instruction), teacher)
 
     def _rigid(self, label: str) -> ObjectState:
-        instance_name = self._instance_name(label)
-        objects = self.task_env.scene_manager.get_objects(
-            env_ids=[self.env_idx], object_name=instance_name, object_type="rigid"
-        )
-        if len(objects) != 1:
-            raise RuntimeError(
-                f"expected one rigid object for label {label!r} (instance {instance_name!r}), found {list(objects)}"
-            )
-        obj = next(iter(objects.values()))
-        try:
-            position, orientation, bbox = obj.get_bbox(is_relative=True)
-            return ObjectState(Pose(position, orientation), bbox)
-        except (AttributeError, RuntimeError, ValueError, TypeError):
-            position, orientation = obj.get_local_pose()
-            return ObjectState(Pose(_numpy(position), _numpy(orientation)))
+        obj = self._object(label, "rigid")
+        if label not in self._rigid_geometry:
+            try:
+                root_position, root_orientation = obj.get_local_pose()
+                mesh_position, mesh_orientation, bbox = obj.get_bbox(is_relative=True)
+                root = Pose(_numpy(root_position), _numpy(root_orientation))
+                mesh = Pose(_numpy(mesh_position), _numpy(mesh_orientation))
+                root_inverse = root.quaternion * np.array([1.0, -1.0, -1.0, -1.0])
+                local_position = quaternion_rotation_matrix(root.quaternion).T @ (
+                    mesh.position - root.position
+                )
+                local_orientation = quaternion_multiply(root_inverse, mesh.quaternion)
+                self._rigid_geometry[label] = (
+                    local_position,
+                    local_orientation / np.linalg.norm(local_orientation),
+                    _numpy(bbox),
+                )
+            except (AttributeError, RuntimeError, ValueError, TypeError):
+                position, orientation, bbox = obj.get_bbox(is_relative=True)
+                return ObjectState(Pose(position, orientation), bbox)
+
+        local_position, local_orientation, bbox = self._rigid_geometry[label]
+        root_position, root_orientation = obj.get_local_pose()
+        root = Pose(_numpy(root_position), _numpy(root_orientation))
+        mesh_position = root.position + quaternion_rotation_matrix(root.quaternion) @ local_position
+        mesh_orientation = quaternion_multiply(root.quaternion, local_orientation)
+        return ObjectState(Pose(mesh_position, mesh_orientation), bbox)
 
     def _geometry(self, label: str) -> ObjectState:
+        if label in self._static_geometry:
+            return self._static_geometry[label]
+        obj = self._object(label, "geometry")
+        state = obj.get_state(is_relative=True)
+        result = ObjectState(Pose.from_array(_numpy(state["root_pose"])))
+        self._static_geometry[label] = result
+        return result
+
+    def _object(self, label: str, object_type: str) -> Any:
+        key = (label, object_type)
+        if key in self._objects:
+            return self._objects[key]
         instance_name = self._instance_name(label)
         objects = self.task_env.scene_manager.get_objects(
-            env_ids=[self.env_idx], object_name=instance_name, object_type="geometry"
+            env_ids=[self.env_idx], object_name=instance_name, object_type=object_type
         )
         if len(objects) != 1:
             raise RuntimeError(
-                f"expected one geometry object for label {label!r} (instance {instance_name!r}), found {list(objects)}"
+                f"expected one {object_type} object for label {label!r} "
+                f"(instance {instance_name!r}), found {list(objects)}"
             )
-        obj = next(iter(objects.values()))
-        state = obj.get_state(is_relative=True)
-        return ObjectState(Pose.from_array(_numpy(state["root_pose"])))
+        result = next(iter(objects.values()))
+        self._objects[key] = result
+        return result
 
     def _instance_name(self, label: str) -> str:
         layout_manager = getattr(self.task_env.scene_manager, "layout_manager", None)

@@ -5,11 +5,18 @@ from robodojosim.robodojo_adapter import RoboDojoSceneAdapter, teacher_frame
 
 
 class FakeRigid:
-    def __init__(self, state):
-        self.state = state
+    def __init__(self, bottle):
+        self.bottle = bottle
+
+    @property
+    def state(self):
+        return self.bottle.state
 
     def get_bbox(self, is_relative=True):
         return self.state.pose.position, self.state.pose.quaternion, self.state.bbox
+
+    def get_local_pose(self):
+        return self.state.pose.position, self.state.pose.quaternion
 
 
 class FakeGeometry:
@@ -30,7 +37,7 @@ class FakeSceneManager:
         self.requests.append((env_ids, object_name, object_type))
         label = object_name.removesuffix("_instance")
         if object_type == "rigid":
-            return {f"env0_rigid_{object_name}": FakeRigid(self.mock.bottles[label].state)}
+            return {f"env0_rigid_{object_name}": FakeRigid(self.mock.bottles[label])}
         return {f"env0_geometry_{object_name}": FakeGeometry(self.mock.dustbin)}
 
 
@@ -61,3 +68,21 @@ def test_scene_adapter_extracts_privileged_state_without_isaac_imports():
     ]
     teacher = teacher_frame(snapshot, "grasp", "bottle0", "left")
     assert set(teacher) >= {"phase", "bottle", "active_arm", "bottle0_pose", "dustbin_pose"}
+
+
+def test_scene_adapter_caches_object_lookup_mesh_bounds_and_static_geometry():
+    mock = MockBottleEnv(5)
+    task_env = FakeTaskEnv(mock)
+    adapter = RoboDojoSceneAdapter(task_env)
+    first = adapter.snapshot(mock.observation())
+    request_count = len(task_env.scene_manager.requests)
+    mock.bottles["bottle0"].state = type(mock.bottles["bottle0"].state)(
+        first.bottles["bottle0"].pose.at(first.bottles["bottle0"].pose.position + [0.1, 0.0, 0.0]),
+        first.bottles["bottle0"].bbox,
+    )
+    second = adapter.snapshot(mock.observation())
+    assert len(task_env.scene_manager.requests) == request_count
+    np.testing.assert_allclose(
+        second.bottles["bottle0"].pose.position,
+        first.bottles["bottle0"].pose.position + [0.1, 0.0, 0.0],
+    )

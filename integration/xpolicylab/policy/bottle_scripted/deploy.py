@@ -36,7 +36,12 @@ def eval_one_episode(TASK_ENV, model_client):
     layout_seed = _seed(TASK_ENV)
     episode_id = layout_seed + int(os.environ.get("ROBODOJOSIM_EPISODE_OFFSET", "0"))
     recorder = None
-    if EpisodeRecorder.is_complete(
+    record_episode = os.environ.get("ROBODOJOSIM_RECORD", "1") == "1"
+    if os.environ.get("ROBODOJOSIM_CALIBRATION_FAST") == "1":
+        record_episode = os.environ.get("ROBODOJOSIM_RECORD_CALIBRATION", "0") == "1"
+    if not record_episode:
+        print("[bottle_scripted] recording disabled for this calibration run")
+    elif EpisodeRecorder.is_complete(
         output_dir, episode_id, require_success=collection_profile != "world_model"
     ):
         print(f"[bottle_scripted] episode {episode_id} already recorded; executing without overwriting it")
@@ -50,7 +55,7 @@ def eval_one_episode(TASK_ENV, model_client):
             frequency=int(observation.get("additional_info", {}).get("frequency", 25)),
             metadata={
                 "task": "put_bottles_into_dustbin",
-                "controller": "cartesian_scripted_v1",
+                "controller": "closed_loop_cartesian_v2",
                 "layout_seed": layout_seed,
                 "trajectory_variant": trajectory_variant,
                 "collection_profile": collection_profile,
@@ -62,7 +67,10 @@ def eval_one_episode(TASK_ENV, model_client):
     try:
         while not TASK_ENV.is_episode_end() and not controller.done:
             snapshot = adapter.snapshot(observation)
-            planned = controller.next_action(snapshot)
+            try:
+                planned = controller.next_action(snapshot)
+            except StopIteration:
+                break
             if recorder is not None:
                 recorder.append(
                     observation,

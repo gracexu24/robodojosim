@@ -9,7 +9,7 @@ Ubuntu + NVIDIA machine.
 
 ## What is included
 
-- A deterministic, safety-bounded Cartesian state machine.
+- A deterministic, safety-bounded, closed-loop Cartesian state machine.
 - Direct per-arm pickups into a shared tabletop training dustbin, plus an experimental configurable handoff path.
 - EE-pose actions in RoboDojo's `[x, y, z, qw, qx, qy, qz]` convention.
 - Normalized gripper control (`1.0` open, `0.0` closed).
@@ -44,16 +44,20 @@ Every call emits a complete bimanual action:
 }
 ```
 
-RoboDojo sends each EE target through its built-in IK solver and executes the resulting joints. The script limits
-Cartesian steps to 3.5 cm, rejects targets outside the configured workspace, and finishes in under the task's
-700-action limit. The sequence is:
+On every action, the controller reads fresh bottle, bin, gripper, and end-effector poses. It recomputes the current
+state-machine target, emits one bounded Cartesian command, and lets RoboDojo's built-in IK solver generate joint
+commands for that physics step. It never memorizes joint trajectories or invokes a model at episode runtime. Failed
+grasps are detected from bottle/gripper relative motion and trigger open-retreat-replan recovery.
+
+The script limits Cartesian steps to 3.5 cm, rejects targets outside the configured workspace, and uses staged,
+reachability-aware motion. The calibrated simple-task sequence is:
 
 ```text
-approach -> descend -> close -> lift -> above shared tabletop bin -> open -> retreat -> home
+find -> pregrasp -> grasp -> verify/lift -> retract -> lateral bin entry -> release -> validate -> home
 ```
 
 The bottle task grants full success only after all four bottles are in the bin, both grippers are open, and both
-arms return to their exact initial poses. The controller explicitly handles all three conditions.
+arms return within its home tolerance. The controller explicitly handles all three conditions.
 
 ## Develop and test now (no simulator required)
 
@@ -156,10 +160,10 @@ bash scripts/enable_fast_calibration.sh /path/to/RoboDojo
 export ROBODOJOSIM_CALIBRATION_FAST=1
 ```
 
-This mode preserves simulator state, physics, actions, and reward checks, but disables camera sensors and evaluation
-video. It saves substantial disk space; on the tested workstation, IK and physics still dominate wall time, so it is
-not a material runtime speedup. Do not use it for policy or world-model collection; LeRobot export requires the normal
-three-camera output.
+This mode preserves simulator state, physics, actions, and reward checks, but disables camera sensors, dataset
+recording, and evaluation video. Together with cached scene-object lookup and cached mesh bounds, the calibrated
+state-only loop reached roughly seven controller steps per second on the tested workstation. Do not use it for policy
+or world-model collection; LeRobot export requires the normal three-camera output.
 
 ## Collection campaigns
 

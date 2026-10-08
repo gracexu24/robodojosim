@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -14,6 +15,7 @@ from .geometry import (
     bbox_bottom,
     bbox_top,
     bbox_world_center,
+    bbox_world_corners,
     interpolate_pose,
 )
 from .types import Action, Pose, SceneSnapshot
@@ -111,6 +113,24 @@ class ControllerConfig:
     carry_waypoints_max: int = 0
     carry_xy_jitter: float = 0.0
     carry_z_jitter: float = 0.0
+    live_pose_feedback: bool = False
+    max_grasp_retries: int = 3
+    grasp_follow_tolerance: float = 0.045
+    retry_carry_translation_step: float = 0.010
+    drop_validation_half_extents: tuple[float, float] = (0.29, 0.31)
+    drop_validation_margin: float = 0.005
+    drop_validation_height_slack: float = 0.015
+    target_position_tolerance: float = 0.006
+    target_orientation_tolerance_degrees: float = 5.0
+    recovery_retreat_height: float = 0.12
+    grasp_xy_tolerance: float = 0.012
+    grasp_vertical_residual_max: float = 0.055
+    grasp_orientation_tolerance_degrees: float = 12.0
+    lift_retract_y: float = -0.10
+    transit_corridor_y: float = -0.18
+    transit_entry_margin: float = 0.065
+    home_acceptance_position_tolerance: float = 0.14
+    home_acceptance_orientation_degrees: float = 20.0
 
     def __post_init__(self) -> None:
         if self.max_translation_step <= 0:
@@ -167,6 +187,32 @@ class ControllerConfig:
             raise ValueError("hold step range must be positive and ordered")
         if not 0 <= self.carry_waypoints_min <= self.carry_waypoints_max:
             raise ValueError("carry waypoint range must be non-negative and ordered")
+        if self.max_grasp_retries < 0:
+            raise ValueError("max_grasp_retries cannot be negative")
+        if self.grasp_follow_tolerance <= 0 or self.retry_carry_translation_step <= 0:
+            raise ValueError("feedback motion tolerances must be positive")
+        if len(self.drop_validation_half_extents) != 2 or any(
+            extent <= 0 for extent in self.drop_validation_half_extents
+        ):
+            raise ValueError("drop_validation_half_extents must contain two positive values")
+        if self.drop_validation_margin < 0 or self.drop_validation_height_slack < 0:
+            raise ValueError("drop validation margins cannot be negative")
+        if self.transit_entry_margin < self.drop_validation_margin or any(
+            self.transit_entry_margin >= extent for extent in self.drop_validation_half_extents
+        ):
+            raise ValueError("transit_entry_margin must fit inside the bin validation extents")
+        if not 0 < self.home_acceptance_position_tolerance < 0.15:
+            raise ValueError("home_acceptance_position_tolerance must stay below the task's 0.15 m tolerance")
+        if not 0 < self.home_acceptance_orientation_degrees < 180:
+            raise ValueError("home_acceptance_orientation_degrees must be between zero and 180")
+        if self.target_position_tolerance <= 0 or not 0 < self.target_orientation_tolerance_degrees < 180:
+            raise ValueError("closed-loop target tolerances must be positive")
+        if self.recovery_retreat_height <= 0:
+            raise ValueError("recovery_retreat_height must be positive")
+        if self.grasp_xy_tolerance <= 0 or self.grasp_vertical_residual_max <= 0:
+            raise ValueError("grasp acceptance distances must be positive")
+        if not 0 < self.grasp_orientation_tolerance_degrees < 180:
+            raise ValueError("grasp_orientation_tolerance_degrees must be between zero and 180")
 
     @classmethod
     def from_json(cls, path: str | Path) -> ControllerConfig:
@@ -212,14 +258,41 @@ class BottleController:
         self._steps: list[PlannedAction] = []
         self._cursor = 0
         self._home: dict[str, Pose] = {}
+        self._executed_total = 0
+        self._feedback_complete = False
+        self._feedback_queue: list[str] = []
+        self._feedback_slot: dict[str, int] = {}
+        self._active_bottle: str | None = None
+        self._active_arm: str | None = None
+        self._feedback_stage = "idle"
+        self._feedback_target: Pose | None = None
+        self._feedback_repeat = 0
+        self._recovering = False
+        self._command_grippers = {"left": self.config.open_value, "right": self.config.open_value}
+        self._carry_orientation: np.ndarray | None = None
+        self._grasp_to_bottom = 0.0
+        self._lift_retracted = False
+        self._grasp_relative_position: np.ndarray | None = None
+        self._place_xy: np.ndarray | None = None
+        self._retry_counts: dict[str, int] = {}
+        self._debug_stage = ""
+        self._tracking_stage = ""
+        self._best_tracking_error = float("inf")
+        self._stall_count = 0
 
     @property
     def done(self) -> bool:
+        if self.config.live_pose_feedback:
+            return self._feedback_complete
         return bool(self._steps) and self._cursor >= len(self._steps)
 
     @property
     def phase(self) -> Phase:
-        if not self._steps or self.done:
+        if self.done:
+            return Phase.DONE
+        if self.config.live_pose_feedback:
+            return self._feedback_phase()
+        if not self._steps:
             return Phase.DONE
         return self._steps[self._cursor].phase
 
@@ -229,10 +302,40 @@ class BottleController:
 
     @property
     def executed_action_count(self) -> int:
+        if self.config.live_pose_feedback:
+            return self._executed_total
         return self._cursor
+
+    @property
+    def retry_counts(self) -> Mapping[str, int]:
+        return dict(self._retry_counts)
 
     def reset(self, snapshot: SceneSnapshot) -> None:
         self._home = dict(snapshot.arms)
+        self._executed_total = 0
+        self._feedback_complete = False
+        self._active_bottle = None
+        self._active_arm = None
+        self._feedback_stage = "idle"
+        self._feedback_target = None
+        self._feedback_repeat = 0
+        self._recovering = False
+        self._command_grippers = dict(snapshot.grippers)
+        self._carry_orientation = None
+        self._grasp_to_bottom = 0.0
+        self._lift_retracted = False
+        self._grasp_relative_position = None
+        self._place_xy = None
+        self._retry_counts = {}
+        self._debug_stage = ""
+        self._tracking_stage = ""
+        self._best_tracking_error = float("inf")
+        self._stall_count = 0
+        if self.config.live_pose_feedback:
+            self._feedback_queue = self._bottle_order(snapshot)
+            self._feedback_slot = {label: index for index, label in enumerate(self._feedback_queue)}
+            self._feedback_stage = "prepare"
+            return
         events = self._build_events(snapshot)
         self._steps = self._compile(events, snapshot)
         self._cursor = 0
@@ -242,6 +345,12 @@ class BottleController:
             )
 
     def next_action(self, snapshot: SceneSnapshot | None = None) -> PlannedAction:
+        if self.config.live_pose_feedback:
+            if snapshot is None:
+                raise RuntimeError("live_pose_feedback requires a fresh scene snapshot for every action")
+            if not self._home:
+                self.reset(snapshot)
+            return self._next_feedback_action(snapshot)
         if not self._steps:
             if snapshot is None:
                 raise RuntimeError("controller must be reset with a scene snapshot")
@@ -252,14 +361,676 @@ class BottleController:
         self._cursor += 1
         return result
 
+    def _next_feedback_action(self, snapshot: SceneSnapshot) -> PlannedAction:
+        if self.done:
+            raise StopIteration("scripted controller is done")
+        if self._feedback_stage in {
+            "lift",
+            "hold",
+            "carry",
+            "transit_retract",
+            "transit_lateral",
+            "transit",
+            "place",
+        } and self._carried_bottle_was_lost(snapshot):
+            if self._bottle_is_inside_bin_xy(snapshot, self._active_bottle):
+                print(
+                    f"[bottle_controller] bottle={self._active_bottle} released over bin; "
+                    "settling before validation"
+                )
+                self._grasp_relative_position = None
+                self._feedback_target = None
+                self._feedback_repeat = 0
+                self._feedback_stage = "release"
+            else:
+                self._begin_recovery(snapshot, "bottle stopped following the closed gripper")
+
+        # A state may already be satisfied by the latest simulator result. In
+        # that case advance immediately instead of emitting redundant holds.
+        for _ in range(24):
+            stage = self._feedback_stage
+            if stage != self._tracking_stage:
+                self._tracking_stage = stage
+                self._best_tracking_error = float("inf")
+                self._stall_count = 0
+            if os.environ.get("ROBODOJOSIM_CONTROLLER_DEBUG") == "1" and stage != self._debug_stage:
+                print(
+                    f"[bottle_controller] step={self._executed_total} state={stage} "
+                    f"bottle={self._active_bottle or ''} arm={self._active_arm or ''}"
+                )
+                self._debug_stage = stage
+            if stage == "prepare":
+                if not self._feedback_queue:
+                    self._feedback_complete = True
+                    raise StopIteration("scripted controller is done")
+                self._active_bottle = self._feedback_queue[0]
+                bottle = snapshot.bottles[self._active_bottle]
+                self._active_arm = (
+                    "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
+                )
+                self._feedback_target = None
+                self._grasp_relative_position = None
+                self._carry_orientation = None
+                self._lift_retracted = False
+                self._place_xy = None
+                self._feedback_repeat = 0
+                if abs(snapshot.grippers[self._active_arm] - self.config.open_value) > 0.1:
+                    self._recovering = False
+                    self._feedback_stage = "open"
+                else:
+                    self._command_grippers[self._active_arm] = self.config.open_value
+                    self._feedback_stage = "rise"
+                continue
+
+            if stage == "open":
+                assert self._active_arm is not None
+                self._command_grippers[self._active_arm] = self.config.open_value
+                if self._feedback_repeat >= self.config.gripper_hold_steps:
+                    self._feedback_repeat = 0
+                    self._feedback_target = None
+                    self._feedback_stage = "recovery_retreat" if self._recovering else "rise"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.RELEASE)
+
+            if stage == "recovery_retreat":
+                assert self._active_arm is not None
+                if self._feedback_target is None:
+                    position = snapshot.arms[self._active_arm].position + np.array(
+                        [0.0, 0.0, self.config.recovery_retreat_height]
+                    )
+                    position = np.minimum(position, np.asarray(self.config.workspace_max) - 0.02)
+                    self._feedback_target = snapshot.arms[self._active_arm].at(position)
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._feedback_target = None
+                    self._feedback_stage = "rise"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
+                )
+
+            if stage == "rise":
+                assert self._active_arm is not None
+                _, pregrasp, _ = self._live_grasp_poses(snapshot)
+                if self._feedback_target is None:
+                    current = snapshot.arms[self._active_arm]
+                    self._feedback_target = Pose(
+                        [
+                            current.position[0],
+                            current.position[1],
+                            pregrasp.position[2],
+                        ],
+                        current.quaternion,
+                    )
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._feedback_target = None
+                    self._feedback_stage = "pregrasp"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.APPROACH, self.config.max_translation_step
+                )
+
+            if stage == "pregrasp":
+                _, target, _ = self._live_grasp_poses(snapshot)
+                if self._target_reached(snapshot, target) or self._movement_stalled(snapshot, target):
+                    self._feedback_stage = "grasp"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, target, Phase.APPROACH, self.config.max_translation_step
+                )
+
+            if stage == "grasp":
+                target, _, bottle_bottom = self._live_grasp_poses(snapshot)
+                stalled = self._movement_stalled(snapshot, target)
+                if self._target_reached(snapshot, target) or (
+                    stalled and self._grasp_pose_is_acceptable(snapshot, target)
+                ):
+                    self._carry_orientation = target.quaternion.copy()
+                    self._grasp_to_bottom = max(0.0, float(target.position[2] - bottle_bottom))
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "close"
+                    continue
+                step = self.config.max_grasp_translation_step or self.config.max_translation_step
+                return self._feedback_move_action(snapshot, target, Phase.GRASP, step)
+
+            if stage == "close":
+                assert self._active_arm is not None and self._active_bottle is not None
+                self._command_grippers[self._active_arm] = self.config.closed_value
+                if self._feedback_repeat >= self.config.gripper_hold_steps:
+                    bottle = snapshot.bottles[self._active_bottle]
+                    self._grasp_relative_position = (
+                        bbox_world_center(bottle.pose, bottle.bbox)
+                        - snapshot.arms[self._active_arm].position
+                    )
+                    self._feedback_repeat = 0
+                    self._feedback_target = self._lift_target(snapshot)
+                    self._feedback_stage = "lift"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.CLOSE)
+
+            if stage == "lift":
+                assert self._feedback_target is not None
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or (stalled and self._bottle_clears_rim(snapshot)):
+                    self._feedback_target = None
+                    if self.config.stop_after_lift:
+                        self._feedback_complete = True
+                        raise StopIteration("scripted controller completed requested lift")
+                    self._feedback_stage = "transit_retract"
+                    continue
+                if stalled and not self._lift_retracted:
+                    current = snapshot.arms[self._active_arm]
+                    position = self._feedback_target.position.copy()
+                    position[0] = current.position[0]
+                    position[1] = min(current.position[1], self.config.lift_retract_y)
+                    self._feedback_target = Pose(position, self._feedback_target.quaternion)
+                    self._lift_retracted = True
+                    self._best_tracking_error = float("inf")
+                    self._stall_count = 0
+                    if os.environ.get("ROBODOJOSIM_CONTROLLER_DEBUG") == "1":
+                        print(
+                            f"[bottle_controller] step={self._executed_total} state=lift "
+                            f"recompute=retract target={position.round(5).tolist()}"
+                        )
+                    continue
+                if stalled:
+                    self._begin_recovery(snapshot, "lift stalled before the bottle cleared the bin rim")
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.LIFT, self.config.max_lift_translation_step
+                )
+
+            if stage == "transit_retract":
+                assert self._active_arm is not None and self._carry_orientation is not None
+                if self._feedback_target is None:
+                    current = snapshot.arms[self._active_arm]
+                    position = current.position.copy()
+                    position[1] = self.config.transit_corridor_y
+                    self._feedback_target = Pose(position, self._carry_orientation)
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or stalled:
+                    self._feedback_target = None
+                    self._feedback_stage = "transit_lateral"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step()
+                )
+
+            if stage == "transit_lateral":
+                assert self._active_arm is not None
+                if self._bottle_is_inside_bin_xy(
+                    snapshot, self._active_bottle, margin=self.config.transit_entry_margin
+                ):
+                    self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                    self._feedback_target = None
+                    self._feedback_stage = "place" if self.config.place_clearance is not None else "release"
+                    continue
+                if self._feedback_target is None:
+                    desired = self._drop_target(snapshot, place=False)
+                    position = desired.position.copy()
+                    position[1] = self.config.transit_corridor_y
+                    self._feedback_target = Pose(position, desired.quaternion)
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached:
+                    self._feedback_target = None
+                    self._feedback_stage = "transit"
+                    continue
+                if stalled:
+                    if self._bottle_is_inside_bin_xy(snapshot, self._active_bottle):
+                        self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                        self._feedback_target = None
+                        self._feedback_stage = "place" if self.config.place_clearance is not None else "release"
+                        continue
+                    self._begin_recovery(snapshot, "lateral transit stalled before the bottle entered the bin")
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step()
+                )
+
+            if stage == "transit":
+                assert self._active_arm is not None
+                if self._feedback_target is None:
+                    self._feedback_target = self._drop_target(snapshot, place=False)
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or (stalled and self._bottle_is_inside_bin_xy(snapshot, self._active_bottle)):
+                    self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                    self._feedback_target = None
+                    self._feedback_stage = "place" if self.config.place_clearance is not None else "release"
+                    continue
+                if stalled:
+                    self._begin_recovery(snapshot, "forward transit stalled before the bottle entered the bin")
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step()
+                )
+
+            if stage == "place":
+                if self._feedback_target is None:
+                    self._feedback_target = self._drop_target(snapshot, place=True)
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or (stalled and self._bottle_is_inside_bin(snapshot, self._active_bottle)):
+                    self._feedback_target = None
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "drop_hold"
+                    continue
+                if stalled:
+                    self._begin_recovery(snapshot, "placement stalled before the bottle was inside the bin")
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step()
+                )
+
+            if stage == "drop_hold":
+                if self._feedback_repeat >= self.config.drop_hold_steps:
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "release"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.HOLD)
+
+            if stage == "release":
+                assert self._active_arm is not None
+                self._command_grippers[self._active_arm] = self.config.open_value
+                if self._feedback_repeat >= self.config.gripper_hold_steps:
+                    self._feedback_repeat = 0
+                    position = snapshot.arms[self._active_arm].position + np.array(
+                        [0.0, 0.0, self.config.retreat_height]
+                    )
+                    self._feedback_target = snapshot.arms[self._active_arm].at(position)
+                    self._feedback_stage = "retreat"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.RELEASE)
+
+            if stage == "retreat":
+                assert self._feedback_target is not None
+                if self._target_reached(snapshot, self._feedback_target):
+                    self._feedback_target = None
+                    self._feedback_stage = "home_raise"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
+                )
+
+            if stage == "home_raise":
+                assert self._active_arm is not None
+                if self._feedback_target is None:
+                    current = snapshot.arms[self._active_arm]
+                    clearance = min(
+                        self.config.workspace_max[2] - 0.02,
+                        max(current.position[2], self._home[self._active_arm].position[2])
+                        + self.config.home_clearance_height,
+                    )
+                    self._feedback_target = current.at([current.position[0], current.position[1], clearance])
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._feedback_target = None
+                    self._feedback_stage = "home_overhead"
+                    continue
+                return self._feedback_move_action(snapshot, self._feedback_target, Phase.HOME, self._home_step())
+
+            if stage == "home_overhead":
+                assert self._active_arm is not None
+                if self._feedback_target is None:
+                    current = snapshot.arms[self._active_arm]
+                    home = self._home[self._active_arm]
+                    self._feedback_target = Pose(
+                        [home.position[0], home.position[1], current.position[2]], current.quaternion
+                    )
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._feedback_target = None
+                    self._feedback_stage = "home_descend"
+                    continue
+                return self._feedback_move_action(snapshot, self._feedback_target, Phase.HOME, self._home_step())
+
+            if stage == "home_descend":
+                assert self._active_arm is not None
+                home = self._home[self._active_arm]
+                target = home.at(home.position + [0.0, 0.0, self.config.home_completion_height_offset])
+                reached = self._target_reached(snapshot, target)
+                stalled = self._movement_stalled(snapshot, target)
+                if reached or (stalled and self._home_pose_is_acceptable(snapshot)):
+                    if not self._bottle_is_inside_bin(snapshot, self._active_bottle):
+                        self._begin_recovery(snapshot, "released bottle is not fully inside the dustbin")
+                        continue
+                    self._feedback_queue.pop(0)
+                    self._active_bottle = None
+                    self._active_arm = None
+                    self._feedback_target = None
+                    self._grasp_relative_position = None
+                    self._feedback_stage = "prepare"
+                    continue
+                if stalled:
+                    raise SafetyError(f"{self._active_arm} arm stalled outside the task's home tolerance")
+                return self._feedback_move_action(snapshot, target, Phase.HOME, self._home_step())
+
+            raise RuntimeError(f"unknown feedback stage {stage!r}")
+
+        raise RuntimeError("closed-loop state machine made too many transitions without emitting an action")
+
+    def _begin_recovery(self, snapshot: SceneSnapshot, reason: str) -> None:
+        if self._active_bottle is None:
+            raise SafetyError(f"feedback recovery has no active bottle: {reason}")
+        retry = self._retry_counts.get(self._active_bottle, 0) + 1
+        self._retry_counts[self._active_bottle] = retry
+        if retry > self.config.max_grasp_retries:
+            raise SafetyError(
+                f"{self._active_bottle} failed after {self.config.max_grasp_retries} retries: {reason}"
+            )
+        print(f"[bottle_controller] retry={retry} bottle={self._active_bottle} reason={reason}")
+        self._feedback_target = None
+        self._feedback_repeat = 0
+        self._recovering = True
+        self._grasp_relative_position = None
+        self._place_xy = None
+        self._feedback_stage = "open"
+
+    def _carried_bottle_was_lost(self, snapshot: SceneSnapshot) -> bool:
+        if (
+            self._active_bottle is None
+            or self._active_arm is None
+            or self._grasp_relative_position is None
+        ):
+            return False
+        bottle = snapshot.bottles[self._active_bottle]
+        current_relative = (
+            bbox_world_center(bottle.pose, bottle.bbox) - snapshot.arms[self._active_arm].position
+        )
+        return float(np.linalg.norm(current_relative - self._grasp_relative_position)) > self.config.grasp_follow_tolerance
+
+    def _live_grasp_poses(self, snapshot: SceneSnapshot) -> tuple[Pose, Pose, float]:
+        assert self._active_bottle is not None and self._active_arm is not None
+        bottle = snapshot.bottles[self._active_bottle]
+        bottle_center = bbox_world_center(bottle.pose, bottle.bbox)
+        bottle_top = bbox_top(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
+        bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
+        grasp_position = bottle_center.copy()
+        if self.config.grasp_center_offset is None:
+            offset = bottle_top + self.config.grasp_clearance - bottle_center[2]
+            if self.config.grasp_max_center_offset is not None:
+                offset = min(offset, self.config.grasp_max_center_offset)
+            world_half_height = (bottle_top - bottle_bottom) / 2.0
+            if (
+                self.config.upright_grasp_height_fraction is not None
+                and world_half_height > self.config.horizontal_bottle_half_height_max
+            ):
+                offset = min(offset, world_half_height * self.config.upright_grasp_height_fraction)
+            grasp_position[2] = bottle_center[2] + offset
+        else:
+            grasp_position[2] = bottle_center[2] + self.config.grasp_center_offset
+        grasp_position += np.asarray(
+            getattr(self.config, f"{self._active_arm}_grasp_position_offset"), dtype=np.float64
+        )
+        if bottle_top - bottle_center[2] <= self.config.horizontal_bottle_half_height_max:
+            grasp_position += np.asarray(
+                getattr(self.config, f"{self._active_arm}_horizontal_grasp_position_offset"),
+                dtype=np.float64,
+            )
+        orientation = self._orientation(self._active_arm, snapshot)
+        if self.config.align_grasp_to_bbox_major_axis:
+            orientation = align_tool_yaw_to_bbox_major_axis(orientation, bottle.pose, bottle.bbox)
+        grasp = Pose(grasp_position, orientation)
+        pregrasp = grasp.at(grasp.position + [0.0, 0.0, self.config.approach_height])
+        return grasp, pregrasp, bottle_bottom
+
+    def _lift_target(self, snapshot: SceneSnapshot) -> Pose:
+        assert self._active_arm is not None and self._carry_orientation is not None
+        current = snapshot.arms[self._active_arm]
+        dustbin_top = bbox_top(
+            snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
+        )
+        target_z = max(
+            current.position[2] + self.config.lift_height,
+            dustbin_top + self.config.rim_clearance + self._grasp_to_bottom,
+        )
+        return Pose([current.position[0], current.position[1], target_z], self._carry_orientation)
+
+    def _drop_target(self, snapshot: SceneSnapshot, *, place: bool) -> Pose:
+        assert self._active_bottle is not None and self._active_arm is not None
+        assert self._carry_orientation is not None
+        slot = self._feedback_slot[self._active_bottle]
+        dustbin_top = bbox_top(
+            snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
+        )
+        dustbin_bottom = bbox_bottom(
+            snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
+        )
+        position = snapshot.dustbin.pose.position.copy()
+        if self.config.drop_slot_offsets:
+            position[:2] += np.asarray(
+                self.config.drop_slot_offsets[slot % len(self.config.drop_slot_offsets)], dtype=np.float64
+            )
+        position += np.asarray(
+            getattr(self.config, f"{self._active_arm}_drop_position_offset"), dtype=np.float64
+        )
+        if place:
+            if self._place_xy is not None:
+                position[:2] = self._place_xy
+            position[2] = dustbin_bottom + self._grasp_to_bottom + float(self.config.place_clearance)
+        else:
+            position[2] = max(
+                dustbin_top + self.config.drop_clearance,
+                dustbin_top + self.config.rim_clearance + self._grasp_to_bottom,
+            )
+        return Pose(position, self._carry_orientation)
+
+    def _bottle_clears_rim(self, snapshot: SceneSnapshot) -> bool:
+        assert self._active_bottle is not None
+        bottle = snapshot.bottles[self._active_bottle]
+        bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
+        dustbin_top = bbox_top(
+            snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height
+        )
+        return bottle_bottom >= dustbin_top + self.config.rim_clearance
+
+    def _target_reached(self, snapshot: SceneSnapshot, target: Pose) -> bool:
+        assert self._active_arm is not None
+        current = snapshot.arms[self._active_arm]
+        position_ok = (
+            np.linalg.norm(current.position - target.position) <= self.config.target_position_tolerance
+        )
+        cosine = np.cos(np.deg2rad(self.config.target_orientation_tolerance_degrees) / 2.0)
+        orientation_ok = abs(float(np.dot(current.quaternion, target.quaternion))) >= cosine
+        return bool(position_ok and orientation_ok)
+
+    def _movement_stalled(self, snapshot: SceneSnapshot, target: Pose) -> bool:
+        """Detect an IK staging target that has stopped making useful progress.
+
+        This is used only for collision-safe approach states. Task-critical
+        grasp, lift, transit, and place states still require their target or
+        enter explicit recovery instead of silently advancing.
+        """
+
+        assert self._active_arm is not None
+        current = snapshot.arms[self._active_arm]
+        position_error = float(np.linalg.norm(current.position - target.position))
+        angle = np.rad2deg(
+            2.0 * np.arccos(np.clip(abs(float(np.dot(current.quaternion, target.quaternion))), 0.0, 1.0))
+        )
+        combined_error = position_error + 0.002 * float(angle)
+        if combined_error < self._best_tracking_error - 0.0005:
+            self._best_tracking_error = combined_error
+            self._stall_count = 0
+        else:
+            self._stall_count += 1
+        return self._stall_count >= 12
+
+    def _grasp_pose_is_acceptable(self, snapshot: SceneSnapshot, target: Pose) -> bool:
+        assert self._active_arm is not None
+        current = snapshot.arms[self._active_arm]
+        xy_error = float(np.linalg.norm(current.position[:2] - target.position[:2]))
+        vertical_residual = float(current.position[2] - target.position[2])
+        angle = np.rad2deg(
+            2.0 * np.arccos(np.clip(abs(float(np.dot(current.quaternion, target.quaternion))), 0.0, 1.0))
+        )
+        return bool(
+            xy_error <= self.config.grasp_xy_tolerance
+            and 0.0 <= vertical_residual <= self.config.grasp_vertical_residual_max
+            and angle <= self.config.grasp_orientation_tolerance_degrees
+        )
+
+    def _feedback_move_action(
+        self, snapshot: SceneSnapshot, target: Pose, phase: Phase, max_step: float
+    ) -> PlannedAction:
+        assert self._active_arm is not None
+        self._check_pose(target, phase)
+        current = snapshot.arms[self._active_arm]
+        if (
+            os.environ.get("ROBODOJOSIM_CONTROLLER_DEBUG") == "1"
+            and self._executed_total > 0
+            and self._executed_total % 25 == 0
+        ):
+            orientation_error = np.rad2deg(
+                2.0 * np.arccos(np.clip(abs(float(np.dot(current.quaternion, target.quaternion))), 0.0, 1.0))
+            )
+            print(
+                f"[bottle_controller] step={self._executed_total} state={self._feedback_stage} "
+                f"position_error={np.linalg.norm(current.position - target.position):.5f} "
+                f"orientation_error_deg={orientation_error:.2f} "
+                f"current={current.position.round(5).tolist()} target={target.position.round(5).tolist()}"
+            )
+        waypoint = interpolate_pose(current, target, max_step)[0]
+        poses = dict(snapshot.arms)
+        poses[self._active_arm] = waypoint
+        return self._emit_feedback_action(poses, phase)
+
+    def _feedback_hold_action(self, snapshot: SceneSnapshot, phase: Phase) -> PlannedAction:
+        return self._emit_feedback_action(snapshot.arms, phase)
+
+    def _emit_feedback_action(self, poses: Mapping[str, Pose], phase: Phase) -> PlannedAction:
+        assert self._active_arm is not None
+        result = self._planned_action(
+            poses, self._command_grippers, phase, self._active_bottle, self._active_arm
+        )
+        self._executed_total += 1
+        if self._executed_total > self.config.max_actions:
+            raise SafetyError(f"feedback controller exceeded max_actions={self.config.max_actions}")
+        return result
+
+    def _carry_step(self) -> float:
+        if self._active_bottle is not None and self._retry_counts.get(self._active_bottle, 0):
+            return self.config.retry_carry_translation_step
+        return self.config.max_carry_translation_step
+
+    def _home_step(self) -> float:
+        return self.config.max_home_translation_step or self.config.max_translation_step
+
+    def _feedback_phase(self) -> Phase:
+        return {
+            "prepare": Phase.APPROACH,
+            "open": Phase.RELEASE,
+            "recovery_retreat": Phase.RETREAT,
+            "rise": Phase.APPROACH,
+            "pregrasp": Phase.APPROACH,
+            "grasp": Phase.GRASP,
+            "close": Phase.CLOSE,
+            "lift": Phase.LIFT,
+            "hold": Phase.HOLD,
+            "carry": Phase.CARRY,
+            "transit_retract": Phase.TRANSIT,
+            "transit_lateral": Phase.TRANSIT,
+            "transit": Phase.TRANSIT,
+            "place": Phase.TRANSIT,
+            "drop_hold": Phase.HOLD,
+            "release": Phase.RELEASE,
+            "retreat": Phase.RETREAT,
+            "home_raise": Phase.HOME,
+            "home_overhead": Phase.HOME,
+            "home_descend": Phase.HOME,
+        }.get(self._feedback_stage, Phase.DONE)
+
+    def _bottle_is_inside_bin(self, snapshot: SceneSnapshot, label: str | None) -> bool:
+        if label is None:
+            return False
+        bottle = snapshot.bottles[label]
+        if bottle.bbox is None:
+            corners = bottle.pose.position.reshape(1, 3)
+        else:
+            corners = bbox_world_corners(bottle.pose, bottle.bbox)
+        center = snapshot.dustbin.pose.position
+        half_xy = np.asarray(self.config.drop_validation_half_extents) - self.config.drop_validation_margin
+        relative_xy = corners[:, :2] - center[:2]
+        if np.any(np.abs(relative_xy) > half_xy):
+            return False
+        bottom = bbox_bottom(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
+        top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
+        slack = self.config.drop_validation_height_slack
+        return bool(np.min(corners[:, 2]) >= bottom - slack and np.max(corners[:, 2]) <= top + slack)
+
+    def _bottle_is_inside_bin_xy(
+        self, snapshot: SceneSnapshot, label: str | None, *, margin: float | None = None
+    ) -> bool:
+        if label is None:
+            return False
+        bottle = snapshot.bottles[label]
+        if bottle.bbox is None:
+            corners = bottle.pose.position.reshape(1, 3)
+        else:
+            corners = bbox_world_corners(bottle.pose, bottle.bbox)
+        center = snapshot.dustbin.pose.position
+        inset = self.config.drop_validation_margin if margin is None else margin
+        half_xy = np.asarray(self.config.drop_validation_half_extents) - inset
+        return bool(np.all(np.abs(corners[:, :2] - center[:2]) <= half_xy))
+
+    def _home_pose_is_acceptable(self, snapshot: SceneSnapshot) -> bool:
+        assert self._active_arm is not None
+        current = snapshot.arms[self._active_arm]
+        home = self._home[self._active_arm]
+        position_ok = (
+            np.linalg.norm(current.position - home.position)
+            <= self.config.home_acceptance_position_tolerance
+        )
+        cosine = np.cos(np.deg2rad(self.config.home_acceptance_orientation_degrees) / 2.0)
+        orientation_ok = abs(float(np.dot(current.quaternion, home.quaternion))) >= cosine
+        return bool(position_ok and orientation_ok)
+
     def _orientation(self, arm: str, snapshot: SceneSnapshot, handover: bool = False) -> np.ndarray:
         name = f"{arm}_{'handover' if handover else 'grasp'}_quaternion"
         configured = getattr(self.config, name)
         return snapshot.arms[arm].quaternion if configured is None else np.asarray(configured, dtype=np.float64)
 
-    def _build_events(self, snapshot: SceneSnapshot) -> list[_Event]:
+    def _bottle_order(self, snapshot: SceneSnapshot) -> list[str]:
+        layout_words = [
+            round((coordinate + 2.0) * 10_000)
+            for name in sorted(snapshot.bottles)
+            for coordinate in snapshot.bottles[name].pose.position[:2]
+        ]
+        rng = np.random.default_rng(np.random.SeedSequence([self.trajectory_variant, *layout_words]))
+        bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
+        if self.config.vary_bottle_order:
+            rng.shuffle(bottle_order)
+        if self.config.bottle_labels is not None:
+            missing = set(self.config.bottle_labels) - set(snapshot.bottles)
+            if missing:
+                raise SafetyError(f"configured bottles are absent from the scene: {sorted(missing)}")
+            bottle_order = list(self.config.bottle_labels)
+        if self.config.bottle_limit is not None:
+            bottle_order = bottle_order[: self.config.bottle_limit]
+        return bottle_order
+
+    def _build_events(
+        self,
+        snapshot: SceneSnapshot,
+        *,
+        bottle_labels: tuple[str, ...] | None = None,
+        slot_indices: tuple[int, ...] | None = None,
+        append_final_home: bool = True,
+    ) -> list[_Event]:
         poses = dict(snapshot.arms)
-        grippers = {"left": self.config.open_value, "right": self.config.open_value}
+        grippers = dict(snapshot.grippers)
         events: list[_Event] = []
         layout_words = [
             round((coordinate + 2.0) * 10_000)
@@ -275,16 +1046,11 @@ class BottleController:
         )
 
         # Left-side bottles first keeps the bin-side workspace uncluttered.
-        bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
-        if self.config.vary_bottle_order:
-            rng.shuffle(bottle_order)
-        if self.config.bottle_labels is not None:
-            missing = set(self.config.bottle_labels) - set(snapshot.bottles)
-            if missing:
-                raise SafetyError(f"configured bottles are absent from the scene: {sorted(missing)}")
-            bottle_order = list(self.config.bottle_labels)
-        if self.config.bottle_limit is not None:
-            bottle_order = bottle_order[: self.config.bottle_limit]
+        bottle_order = list(bottle_labels) if bottle_labels is not None else self._bottle_order(snapshot)
+        if slot_indices is None:
+            slot_indices = tuple(range(len(bottle_order)))
+        if len(slot_indices) != len(bottle_order):
+            raise ValueError("slot_indices must match bottle_labels")
         for bottle_index, label in enumerate(bottle_order):
             height_delta = float(rng.uniform(-self.config.height_jitter, self.config.height_jitter))
             drop_xy = rng.uniform(-self.config.drop_xy_jitter, self.config.drop_xy_jitter, size=2)
@@ -297,12 +1063,25 @@ class BottleController:
             )
             if self.config.drop_slot_offsets:
                 drop_position[:2] += np.asarray(
-                    self.config.drop_slot_offsets[bottle_index % len(self.config.drop_slot_offsets)],
+                    self.config.drop_slot_offsets[slot_indices[bottle_index] % len(self.config.drop_slot_offsets)],
                     dtype=np.float64,
                 )
             bottle = snapshot.bottles[label]
             bottle_center = bbox_world_center(bottle.pose, bottle.bbox)
             pick_arm = "left" if bottle.pose.position[0] <= self.config.direct_left_max_x else "right"
+            if grippers[pick_arm] != self.config.open_value:
+                grippers[pick_arm] = self.config.open_value
+                events.append(
+                    self._event(
+                        Phase.RELEASE,
+                        poses,
+                        grippers,
+                        pick_arm,
+                        poses[pick_arm],
+                        label,
+                        self.config.gripper_hold_steps,
+                    )
+                )
             drop_position += np.asarray(getattr(self.config, f"{pick_arm}_drop_position_offset"), dtype=np.float64)
             orientation = self._orientation(pick_arm, snapshot)
             if self.config.align_grasp_to_bbox_major_axis:
@@ -603,8 +1382,9 @@ class BottleController:
         # and 20 degrees of their episode-start poses. Return through a high
         # waypoint: a direct diagonal move from the bin can sweep the long X5
         # fingers through an object that was just released successfully.
-        for arm in ("left", "right"):
-            self._append_home(events, poses, grippers, arm)
+        if append_final_home:
+            for arm in ("left", "right"):
+                self._append_home(events, poses, grippers, arm)
         return events
 
     def _append_home(
@@ -734,7 +1514,10 @@ class BottleController:
             elif event.phase is Phase.LIFT and current_grippers[arm] == self.config.closed_value:
                 max_step = self.config.max_lift_translation_step
             elif event.phase in loaded_phases and current_grippers[arm] == self.config.closed_value:
-                max_step = self.config.max_carry_translation_step
+                if self.config.live_pose_feedback and self._retry_counts.get(event.bottle or "", 0):
+                    max_step = self.config.retry_carry_translation_step
+                else:
+                    max_step = self.config.max_carry_translation_step
             else:
                 max_step = self.config.max_translation_step
             waypoints = interpolate_pose(current[arm], target, max_step)

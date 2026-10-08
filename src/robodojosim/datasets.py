@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 from dataclasses import asdict, dataclass
@@ -99,9 +100,9 @@ def summarize_dataset(dataset_dir: str | Path, *, profile: str | None = None) ->
     complete = [record for record in records if record.complete]
     successful = [record for record in complete if record.success]
     complete_frames = sum(record.frames for record in complete)
-    complete_seconds = sum(record.seconds for record in complete)
+    complete_seconds = math.fsum(record.seconds for record in complete)
     frames = sum(record.frames for record in successful)
-    seconds = sum(record.seconds for record in successful)
+    seconds = math.fsum(record.seconds for record in successful)
     return DatasetStats(
         complete_episodes=len(complete),
         complete_frames=complete_frames,
@@ -171,7 +172,7 @@ def write_splits(
             "layout_seeds": split_layouts,
             "episodes": [record.path.name for record in sorted(split_records, key=lambda item: item.episode_id)],
             "episode_count": len(split_records),
-            "hours": sum(record.seconds for record in split_records) / 3600.0,
+            "hours": math.fsum(record.seconds for record in split_records) / 3600.0,
         }
 
     output_path = Path(output) if output else dataset_dir / "splits.json"
