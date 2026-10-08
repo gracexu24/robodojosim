@@ -130,7 +130,8 @@ attempt rewrites that partial path and commits it only after clean close.
 Before training:
 
 - Validate every HDF5 file with `robodojosim validate /path/to/dataset`.
-- Filter manifest entries to `success=true`.
+- For policy training, filter manifest entries to `success=true`; for the world model, retain every structurally valid
+  complete episode, including intentional push/exploration episodes that do not earn the four-bottle task reward.
 - Check action/state lengths match and no values are NaN/Inf.
 - Review videos or sampled RGB sequences for left/right grasp and tabletop-bin drop quality.
 - Split by seed, not by individual frames.
