@@ -7,10 +7,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Self
 
+import cv2
 import h5py
 import numpy as np
 
-from .image_codec import encode_xpolicylab_jpeg
+from .image_codec import decode_jpeg, encode_xpolicylab_jpeg
 
 _PLURAL_KEYS = {
     "left_arm_joint_state": "left_arm_joint_states",
@@ -58,6 +59,7 @@ class EpisodeRecorder:
         frequency: int = 25,
         metadata: Mapping[str, Any] | None = None,
         jpeg_quality: int | None = None,
+        flush_interval: int = 25,
     ):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,6 +68,9 @@ class EpisodeRecorder:
         if jpeg_quality is not None and not 1 <= jpeg_quality <= 100:
             raise ValueError("jpeg_quality must be between 1 and 100")
         self.jpeg_quality = jpeg_quality
+        if flush_interval < 1:
+            raise ValueError("flush_interval must be positive")
+        self.flush_interval = int(flush_interval)
         stem = f"episode_{self.episode_id:06d}"
         self.final_path = self.output_dir / f"{stem}.hdf5"
         self.partial_path = self.output_dir / f".{stem}.partial.hdf5"
@@ -134,7 +139,8 @@ class EpisodeRecorder:
         if teacher:
             self._append_mapping("teacher", teacher, pluralize=False)
         self._length += 1
-        self._file.flush()
+        if self._length % self.flush_interval == 0:
+            self._file.flush()
 
     def close(self, *, success: bool, score: float | None = None, reason: str = "completed") -> Path:
         if self._closed:
@@ -274,12 +280,10 @@ def validate_episode(path: str | Path) -> list[str]:
                     errors.append(f"missing /{key}")
             if not bool(handle.attrs.get("complete", False)):
                 errors.append("file is not marked complete")
-            state_lengths = [
-                dataset.shape[0] for dataset in handle.get("state", {}).values() if isinstance(dataset, h5py.Dataset)
-            ]
-            action_lengths = [
-                dataset.shape[0] for dataset in handle.get("action", {}).values() if isinstance(dataset, h5py.Dataset)
-            ]
+            state_datasets = _datasets_below(handle.get("state"))
+            action_datasets = _datasets_below(handle.get("action"))
+            state_lengths = [dataset.shape[0] for _, dataset in state_datasets]
+            action_lengths = [dataset.shape[0] for _, dataset in action_datasets]
             if not state_lengths:
                 errors.append("state has no time-series datasets")
             if not action_lengths:
@@ -290,6 +294,70 @@ def validate_episode(path: str | Path) -> list[str]:
             expected = int(handle.attrs.get("length", -1))
             if lengths and expected != lengths[0]:
                 errors.append(f"length attribute is {expected}, datasets have {lengths[0]}")
+            if expected <= 0:
+                errors.append(f"invalid recorded length: {expected}")
+            if "success" not in handle.attrs:
+                errors.append("missing success attribute")
+            frequency = handle.get("additional_info/frequency")
+            if frequency is not None and int(frequency[()]) <= 0:
+                errors.append("recording frequency must be positive")
+
+            timed = [(f"state/{name}", dataset) for name, dataset in state_datasets]
+            timed += [(f"action/{name}", dataset) for name, dataset in action_datasets]
+            timed += [(f"teacher/{name}", dataset) for name, dataset in _datasets_below(handle.get("teacher"))]
+            for camera_name, camera in _groups_below(handle.get("vision")):
+                for key in ("colors", "depths"):
+                    if key in camera and isinstance(camera[key], h5py.Dataset):
+                        timed.append((f"vision/{camera_name}/{key}", camera[key]))
+            for name, dataset in timed:
+                if dataset.shape and expected >= 0 and dataset.shape[0] != expected:
+                    errors.append(f"/{name} has {dataset.shape[0]} frames, expected {expected}")
+                if dataset.dtype.kind in {"f", "c"} and not _all_finite(dataset):
+                    errors.append(f"/{name} contains NaN or Inf")
+
+            if handle.attrs.get("image_encoding", "raw") == "xpolicylab_jpeg":
+                for camera_name, camera in _groups_below(handle.get("vision")):
+                    colors = camera.get("colors")
+                    if not isinstance(colors, h5py.Dataset) or not len(colors):
+                        continue
+                    sample_indices = sorted({0, len(colors) // 2, len(colors) - 1})
+                    for index in sample_indices:
+                        try:
+                            frame = decode_jpeg(colors[index])
+                            if frame.ndim != 3 or frame.shape[2] != 3:
+                                errors.append(
+                                    f"/vision/{camera_name}/colors[{index}] decoded to invalid shape {frame.shape}"
+                                )
+                        except (cv2.error, TypeError, ValueError) as exc:
+                            errors.append(f"/vision/{camera_name}/colors[{index}] is not decodable: {exc}")
     except OSError as exc:
         errors.append(f"cannot open HDF5: {exc}")
     return errors
+
+
+def _datasets_below(group: h5py.Group | None) -> list[tuple[str, h5py.Dataset]]:
+    if group is None:
+        return []
+    result: list[tuple[str, h5py.Dataset]] = []
+
+    def collect(name: str, item: h5py.Group | h5py.Dataset) -> None:
+        if isinstance(item, h5py.Dataset):
+            result.append((name, item))
+
+    group.visititems(collect)
+    return result
+
+
+def _groups_below(group: h5py.Group | None) -> list[tuple[str, h5py.Group]]:
+    if group is None:
+        return []
+    return [(name, item) for name, item in group.items() if isinstance(item, h5py.Group)]
+
+
+def _all_finite(dataset: h5py.Dataset, chunk_size: int = 1024) -> bool:
+    if not dataset.shape:
+        return bool(np.all(np.isfinite(dataset[()])))
+    for start in range(0, dataset.shape[0], chunk_size):
+        if not np.all(np.isfinite(dataset[start : start + chunk_size])):
+            return False
+    return True

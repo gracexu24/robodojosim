@@ -60,3 +60,23 @@ def test_jpeg_recording_uses_xpolicylab_variable_length_stream(tmp_path):
     decoded = decode_jpeg(encoded)
     assert decoded.shape == (16, 16, 3)
     assert np.max(np.abs(decoded.astype(int) - observation["vision"]["cam_head"]["color"].astype(int))) <= 2
+
+
+def test_validator_rejects_nonfinite_numeric_data(tmp_path):
+    env = MockBottleEnv()
+    recorder = EpisodeRecorder(tmp_path, 10, seed=0, instruction="test")
+    observation = env.observation()
+    observation["state"]["left_ee_pose"][0] = np.nan
+    recorder.append(observation, BottleController().next_action(env.snapshot()).action)
+    path = recorder.close(success=False)
+
+    assert any("contains NaN or Inf" in error for error in validate_episode(path))
+
+
+def test_recorder_flush_interval_is_validated(tmp_path):
+    try:
+        EpisodeRecorder(tmp_path, 11, seed=0, instruction="test", flush_interval=0)
+    except ValueError as exc:
+        assert "flush_interval" in str(exc)
+    else:
+        raise AssertionError("zero flush interval should fail")

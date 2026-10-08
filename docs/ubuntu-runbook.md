@@ -116,8 +116,8 @@ conda run -n RoboDojo robodojosim campaign \
 ```
 
 Keep these in separate directories. The first command stops at 50 successful simple-task episodes. The second stops
-at six hours of complete randomized interaction frames; its episodes include pushing, airborne holding, and waypoint
-carrying.
+at six hours of complete randomized interaction frames; its episodes include pushing, airborne holding, waypoint
+carrying, and set-down/regrasp sequences.
 That estimate changes after calibration, so use `robodojosim report` rather than an episode count for the world-model
 target.
 
@@ -129,7 +129,7 @@ attempt rewrites that partial path and commits it only after clean close.
 
 Before training:
 
-- Validate every HDF5 file.
+- Validate every HDF5 file with `robodojosim validate /path/to/dataset`.
 - Filter manifest entries to `success=true`.
 - Check action/state lengths match and no values are NaN/Inf.
 - Review videos or sampled RGB sequences for left/right grasp and tabletop-bin drop quality.

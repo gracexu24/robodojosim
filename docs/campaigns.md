@@ -30,6 +30,12 @@ RoboDojo's current public bottle task supplies 25 deterministic layout IDs. Camp
 - deterministic changes to bottle order, approach/lift height, and bin drop point;
 - a randomized push on the first selected bottle in most episodes;
 - a variable airborne hold and two to five randomized carry waypoints for a grasped bottle.
+- a randomized set-down and closed-loop regrasp before the bottle is carried to the bin.
+
+Every skill reads the current simulator object and robot poses on every control step. Randomness selects a deterministic
+skill program for a layout/trajectory variant; it does not replace feedback with memorized joint trajectories. The
+source HDF5 records `teacher/skill` (`push`, `hold`, `carry`, `regrasp`, or `pick_place`) alongside the phase and
+privileged object poses, while LeRobot policy observations remain camera images plus robot state.
 
 This creates useful action and interaction variation, but initial bottle/object scenes still come from those 25
 layouts. Six hours therefore contains repeated initial configurations. Broader world-model pretraining should mix in
@@ -39,7 +45,9 @@ other RoboDojo tasks or genuinely randomized/generated layouts once those are av
 
 Campaign RGB frames are stored as XPolicyLab-compatible JPEG at quality 90. Actual size depends heavily on camera
 resolution and scene texture. Run one 25-layout pass, measure its directory, and extrapolate before launching six
-hours. Keep extra space for failed episodes, RoboDojo videos, partial files, and training conversions.
+hours. Keep extra space for failed episodes, RoboDojo videos, partial files, and training conversions. The writer
+flushes every 25 frames instead of forcing a disk sync after every frame; an interrupted active episode remains a
+hidden partial file and is retried, while completed episodes retain the same atomic guarantee.
 
 ## Resume and failure behavior
 
@@ -53,6 +61,16 @@ Do not mix policy and world-model profiles in one directory. A profile-specific 
 ```bash
 robodojosim report --dataset /path/to/dataset --profile policy
 ```
+
+Validate a whole source dataset with:
+
+```bash
+robodojosim validate /path/to/dataset
+```
+
+This checks completion and success metadata, all state/action/teacher/camera time-axis lengths, positive frequency,
+NaN/Inf in numeric streams, and decodability of sampled JPEG frames. It is a structural gate, not a substitute for
+reviewing sampled videos and plotting action/state distributions by `teacher/skill`.
 
 ## Splits
 

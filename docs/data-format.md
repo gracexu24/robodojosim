@@ -40,12 +40,13 @@ improvement.
 ## Validation
 
 ```bash
-robodojosim validate /path/to/episode_000000.hdf5
+robodojosim validate /path/to/dataset
 ```
 
-The validator checks required groups, atomic-completion status, state/action time-series presence, and matching
-lengths. Dataset-level quality review still needs physics success, visual inspection, and train/validation seed
-separation.
+The validator accepts a file or a complete dataset directory. It checks required groups and metadata, atomic-completion
+status, every recorded time-axis length, positive frequency, NaN/Inf in numeric streams, and sampled JPEG
+decodability. Dataset-level quality review still needs physics success, visual inspection, action/state distribution
+plots by `teacher/skill`, and train/validation seed separation.
 
 Create leakage-safe splits grouped by layout ID:
 

@@ -62,6 +62,7 @@ def eval_one_episode(TASK_ENV, model_client):
                 "campaign_id": os.environ.get("ROBODOJOSIM_CAMPAIGN_ID", "manual"),
             },
             jpeg_quality=int(jpeg_quality) if jpeg_quality else None,
+            flush_interval=int(os.environ.get("ROBODOJOSIM_FLUSH_INTERVAL", "25")),
         )
     reason = "controller_complete"
     try:
@@ -75,7 +76,13 @@ def eval_one_episode(TASK_ENV, model_client):
                 recorder.append(
                     observation,
                     planned.action,
-                    teacher=teacher_frame(snapshot, planned.phase.value, planned.bottle, planned.active_arm),
+                    teacher=teacher_frame(
+                        snapshot,
+                        planned.phase.value,
+                        planned.bottle,
+                        planned.active_arm,
+                        str(planned.privileged.get("skill", "pick_place")),
+                    ),
                 )
             TASK_ENV.take_action(planned.action)
             if not TASK_ENV.is_episode_end() and not controller.done:

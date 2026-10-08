@@ -466,9 +466,7 @@ def test_place_clearance_descends_inside_bin_before_release():
 
 
 def test_grasp_settle_repeats_target_with_open_gripper_before_close():
-    controller = BottleController(
-        ControllerConfig(bottle_limit=1, stop_after_lift=True, grasp_settle_steps=3)
-    )
+    controller = BottleController(ControllerConfig(bottle_limit=1, stop_after_lift=True, grasp_settle_steps=3))
     controller.reset(MockBottleEnv(seed=0).snapshot())
     planned = [controller.next_action() for _ in range(controller.planned_action_count)]
     close_index = next(i for i, step in enumerate(planned) if step.phase is Phase.CLOSE)
@@ -598,9 +596,7 @@ def test_grasp_specific_step_size_preserves_fast_free_space_approach():
 def test_pregrasp_settle_repeats_last_safe_approach_pose():
     snapshot = MockBottleEnv(seed=0).snapshot()
     baseline = BottleController(ControllerConfig(bottle_limit=1, direct_right_drop=True))
-    settled = BottleController(
-        ControllerConfig(bottle_limit=1, direct_right_drop=True, pregrasp_settle_steps=4)
-    )
+    settled = BottleController(ControllerConfig(bottle_limit=1, direct_right_drop=True, pregrasp_settle_steps=4))
     baseline.reset(snapshot)
     settled.reset(snapshot)
     assert settled.planned_action_count == baseline.planned_action_count + 4
@@ -612,8 +608,7 @@ def test_pregrasp_settle_repeats_last_safe_approach_pose():
     assert all(step.phase is Phase.APPROACH for step in pregrasp)
     arm = pregrasp[-1].active_arm
     assert all(
-        np.array_equal(step.action[f"{arm}_ee_pose"], pregrasp[-1].action[f"{arm}_ee_pose"])
-        for step in pregrasp
+        np.array_equal(step.action[f"{arm}_ee_pose"], pregrasp[-1].action[f"{arm}_ee_pose"]) for step in pregrasp
     )
 
 
@@ -671,9 +666,7 @@ def test_live_pose_feedback_recovers_after_a_bottle_stops_following_the_gripper(
 
 def test_live_pose_feedback_requires_a_fresh_snapshot_for_every_action():
     env = MockBottleEnv(seed=0)
-    controller = BottleController(
-        ControllerConfig(bottle_limit=1, stop_after_lift=True, live_pose_feedback=True)
-    )
+    controller = BottleController(ControllerConfig(bottle_limit=1, stop_after_lift=True, live_pose_feedback=True))
     controller.reset(env.snapshot())
     with pytest.raises(RuntimeError, match="fresh scene snapshot"):
         controller.next_action()
@@ -706,3 +699,66 @@ def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
     assert "transit_retract" in stages
     assert "transit_lateral" in stages
     assert env.bottles["bottle0"].in_bin
+
+
+def test_live_world_model_feedback_executes_randomized_skill_library():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            world_model_movements=True,
+            push_probability=1.0,
+            regrasp_probability=1.0,
+            bottle_limit=2,
+            direct_right_drop=True,
+            live_pose_feedback=True,
+            hold_steps_min=3,
+            hold_steps_max=3,
+            carry_waypoints_min=2,
+            carry_waypoints_max=2,
+            carry_xy_jitter=0.05,
+            carry_z_jitter=0.03,
+            place_clearance=0.015,
+            workspace_min=(-0.85, -0.55, 0.10),
+            home_completion_height_offset=0.0,
+            max_actions=500,
+        ),
+        trajectory_variant=0,
+    )
+    controller.reset(env.snapshot())
+    skills = set()
+    stages = set()
+    while not controller.done:
+        try:
+            planned = controller.next_action(env.snapshot())
+        except StopIteration:
+            break
+        skills.add(planned.privileged["skill"])
+        stages.add(controller._feedback_stage)
+        env.step(planned.action)
+
+    assert {"push", "hold", "carry", "regrasp", "pick_place"} <= skills
+    assert {"push_execute", "regrasp_release", "regrasp_retreat"} <= stages
+    assert controller.executed_action_count < controller.config.max_actions
+
+
+def test_live_world_model_skill_plan_is_deterministic_per_layout_and_variant():
+    snapshot = MockBottleEnv(seed=4).snapshot()
+    config = ControllerConfig(
+        world_model_movements=True,
+        push_probability=0.5,
+        regrasp_probability=0.5,
+        carry_waypoints_min=2,
+        carry_waypoints_max=5,
+        carry_xy_jitter=0.08,
+        carry_z_jitter=0.04,
+        live_pose_feedback=True,
+    )
+    first = BottleController(config, trajectory_variant=7)
+    repeated = BottleController(config, trajectory_variant=7)
+    different = BottleController(config, trajectory_variant=8)
+    first.reset(snapshot)
+    repeated.reset(snapshot)
+    different.reset(snapshot)
+
+    assert first._skill_plans == repeated._skill_plans
+    assert first._skill_plans != different._skill_plans

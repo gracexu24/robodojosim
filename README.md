@@ -191,8 +191,9 @@ conda run -n RoboDojo robodojosim campaign \
 
 Campaigns are resumable. The policy profile remains the simple four-bottle task and stops at 50 successful episodes.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
-hours (540,000 frames at 25 Hz). Its randomized repertoire pushes one bottle in most episodes, holds another aloft
-for a variable interval, and carries it through two to five safe waypoints before continuing. Task reward is not
+hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle in most episodes, holds
+another aloft for a variable interval, carries it through two to five safe waypoints, and sometimes sets it down and
+regrasps it before continuing. Task reward is not
 required for those deliberately exploratory episodes. Each pass gets a new episode-ID range and deterministic
 trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard decoder.
 
@@ -224,6 +225,7 @@ Inspect progress at any time:
 
 ```bash
 robodojosim report --dataset /workspace/datasets/bottle-world-6h --profile world_model
+robodojosim validate /workspace/datasets/bottle-world-6h
 ```
 
 ## Calibrate before bulk collection

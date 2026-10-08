@@ -66,9 +66,7 @@ class RoboDojoSceneAdapter:
                 root = Pose(_numpy(root_position), _numpy(root_orientation))
                 mesh = Pose(_numpy(mesh_position), _numpy(mesh_orientation))
                 root_inverse = root.quaternion * np.array([1.0, -1.0, -1.0, -1.0])
-                local_position = quaternion_rotation_matrix(root.quaternion).T @ (
-                    mesh.position - root.position
-                )
+                local_position = quaternion_rotation_matrix(root.quaternion).T @ (mesh.position - root.position)
                 local_orientation = quaternion_multiply(root_inverse, mesh.quaternion)
                 self._rigid_geometry[label] = (
                     local_position,
@@ -124,13 +122,20 @@ class RoboDojoSceneAdapter:
         return str(instance_name)
 
 
-def teacher_frame(snapshot: SceneSnapshot, phase: str, bottle: str | None, active_arm: str | None) -> dict[str, Any]:
+def teacher_frame(
+    snapshot: SceneSnapshot,
+    phase: str,
+    bottle: str | None,
+    active_arm: str | None,
+    skill: str | None = None,
+) -> dict[str, Any]:
     """Metadata stored under /teacher, separate from policy observations."""
 
     result: dict[str, Any] = {
         "phase": phase,
         "bottle": bottle or "",
         "active_arm": active_arm or "",
+        "skill": skill or "",
         "dustbin_pose": snapshot.dustbin.pose.as_array(),
     }
     for label, bottle_state in snapshot.bottles.items():

@@ -57,9 +57,16 @@ def _dry_run(args: argparse.Namespace) -> int:
 
 def _validate(args: argparse.Namespace) -> int:
     failed = False
+    paths: list[Path] = []
     for name in args.paths:
-        errors = validate_episode(name)
-        print(f"{name}: {'OK' if not errors else '; '.join(errors)}")
+        candidate = Path(name)
+        paths.extend(sorted(candidate.glob("episode_*.hdf5")) if candidate.is_dir() else [candidate])
+    if not paths:
+        print("no episode_*.hdf5 files found")
+        return 1
+    for path in paths:
+        errors = validate_episode(path)
+        print(f"{path}: {'OK' if not errors else '; '.join(errors)}")
         failed = failed or bool(errors)
     return int(failed)
 
@@ -164,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
     dry.add_argument("--config")
     dry.add_argument("--overwrite", action="store_true")
     dry.set_defaults(func=_dry_run)
-    validate = subparsers.add_parser("validate", help="validate one or more recorded HDF5 files")
+    validate = subparsers.add_parser("validate", help="validate HDF5 files or every episode in a dataset directory")
     validate.add_argument("paths", nargs="+")
     validate.set_defaults(func=_validate)
     plan = subparsers.add_parser("plan", help="show a mock plan summary without recording")
