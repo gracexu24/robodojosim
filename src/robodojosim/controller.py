@@ -53,6 +53,7 @@ class ControllerConfig:
     grasp_max_center_offset: float | None = None
     upright_grasp_height_fraction: float | None = None
     drop_clearance: float = 0.18
+    place_clearance: float | None = None
     rim_clearance: float = 0.03
     retreat_height: float = 0.14
     bottle_fallback_half_height: float = 0.045
@@ -126,6 +127,8 @@ class ControllerConfig:
             raise ValueError("pregrasp_settle_steps and grasp_settle_steps cannot be negative")
         if self.rim_clearance < 0:
             raise ValueError("rim_clearance cannot be negative")
+        if self.place_clearance is not None and self.place_clearance < 0:
+            raise ValueError("place_clearance cannot be negative when provided")
         if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
             raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
         if self.home_clearance_height <= 0:
@@ -265,6 +268,11 @@ class BottleController:
         ]
         rng = np.random.default_rng(np.random.SeedSequence([self.trajectory_variant, *layout_words]))
         dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
+        dustbin_bottom = bbox_bottom(
+            snapshot.dustbin.pose,
+            snapshot.dustbin.bbox,
+            self.config.dustbin_fallback_half_height,
+        )
 
         # Left-side bottles first keeps the bin-side workspace uncluttered.
         bottle_order = sorted(snapshot.bottles, key=lambda name: snapshot.bottles[name].pose.position[0])
@@ -550,6 +558,11 @@ class BottleController:
             )
             carry_pose = Pose(drop_position, carry_orientation)
             events.append(self._event(Phase.TRANSIT, poses, grippers, carrying_arm, carry_pose, label))
+            if self.config.place_clearance is not None:
+                place_position = drop_position.copy()
+                place_position[2] = dustbin_bottom + grasp_to_bottom + self.config.place_clearance
+                carry_pose = Pose(place_position, carry_orientation)
+                events.append(self._event(Phase.TRANSIT, poses, grippers, carrying_arm, carry_pose, label))
             if self.config.drop_hold_steps:
                 events.append(
                     self._event(

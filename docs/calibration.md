@@ -28,7 +28,8 @@ unreachable even though the hand looks roughly vertical.
 7. Verify both arms drop inside the shared tabletop training dustbin. Keep the four `drop_slot_offsets` separated so
    later bottles do not strike or stack on earlier placements. The experimental handoff settings are retained for
    future non-top-down strategies, but are not used by the production profiles.
-8. Tune `drop_clearance` so the bottle clears the rim but does not fall far enough to bounce out.
+8. Tune `drop_clearance` to clear the rim, then `place_clearance` to lower the held bottle close to the bin floor
+   before release without contacting it.
 9. Validate the small profile jitters separately: `policy_data.json` is deterministic; `world_model_data.json`
    varies height by 15 mm and each drop slot by 10 mm. Reduce either value if success degrades.
 

@@ -445,6 +445,26 @@ def test_drop_hold_settles_with_closed_gripper_before_release():
     assert all(float(step.action["left_ee_joint_state"][0]) == 0.0 for step in hold)
 
 
+def test_place_clearance_descends_inside_bin_before_release():
+    controller = BottleController(
+        ControllerConfig(
+            bottle_limit=1,
+            direct_right_drop=True,
+            place_clearance=0.015,
+            workspace_min=(-0.85, -0.55, 0.10),
+        )
+    )
+    controller.reset(MockBottleEnv(seed=0).snapshot())
+    planned = [controller.next_action() for _ in range(controller.planned_action_count)]
+    transits = [step for step in planned if step.phase is Phase.TRANSIT]
+    release = next(step for step in planned if step.phase is Phase.RELEASE)
+    arm = transits[-1].active_arm
+    key = f"{arm}_ee_pose"
+
+    assert transits[-1].action[key][2] < max(step.action[key][2] for step in transits)
+    np.testing.assert_allclose(release.action[key], transits[-1].action[key])
+
+
 def test_grasp_settle_repeats_target_with_open_gripper_before_close():
     controller = BottleController(
         ControllerConfig(bottle_limit=1, stop_after_lift=True, grasp_settle_steps=3)
