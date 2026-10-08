@@ -104,7 +104,7 @@ def configure_training_dustbin(
     target_y: float = -0.10,
     width_scale: float = 1.1,
     depth_scale: float = 1.3,
-    height_scale: float = 0.25,
+    height_scale: float = 0.30,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
@@ -119,10 +119,10 @@ def configure_training_dustbin(
     drink bottles and placed in their stable side poses. Original JSON is backed up by
     :func:`_write_layout`.
 
-    The 0.25 height scale is deliberate: RoboDojo's reward requires the
+    The 0.30 height scale is deliberate: RoboDojo's reward requires the
     bottle's complete 3D bounding box to fit inside the dustbin bounding box.
     All selected bottles are 6--8 cm tall in their stable side poses, so the
-    16.25 cm tabletop bin contains tilted landings while staying below both arms'
+    19.5 cm tabletop bin contains tilted landings while staying below both arms'
     measured carry workspace.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines

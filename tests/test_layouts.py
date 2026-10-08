@@ -68,12 +68,12 @@ def test_training_dustbin_is_shortened_and_placed_on_table(tmp_path):
 
     assert changed == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
-    assert updated["Geometry"]["dustbin"][0]["default_pos"] == [0.0, -0.1, 0.84625]
+    assert updated["Geometry"]["dustbin"][0]["default_pos"] == [0.0, -0.1, 0.8625]
     assert updated["Geometry"]["dustbin"][0]["xlim"] == [0.0, 0.0]
     assert updated["Geometry"]["dustbin"][0]["ylim"] == [-0.1, -0.1]
-    assert updated["Geometry"]["dustbin"][0]["zlim"] == [0.84625, 0.84625]
+    assert updated["Geometry"]["dustbin"][0]["zlim"] == [0.8625, 0.8625]
     assert updated["Geometry"]["dustbin"][0]["relative_plane"] == "Table"
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.1, 1.3, 0.25]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.1, 1.3, 0.3]
     assert updated["Geometry"]["dustbin"][0]["physics"]["collision"] is True
     assert updated["Geometry"]["dustbin"][1]["default_pos"] == [-0.63, 0.2, 0.4]
     assert updated["Rigid"]["bottle"][0]["default_pos"][:2] == [-0.35, -0.26]
@@ -216,7 +216,7 @@ def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
 
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
-    assert updated["Geometry"]["dustbin"][0]["default_pos"] == [0.0, -0.1, 0.84625]
+    assert updated["Geometry"]["dustbin"][0]["default_pos"] == [0.0, -0.1, 0.8625]
 
 
 def test_training_dustbin_migrates_old_half_height_tabletop_variant(tmp_path):
@@ -245,7 +245,7 @@ def test_training_dustbin_migrates_old_half_height_tabletop_variant(tmp_path):
 
     assert centralize_dustbin(tmp_path) == [path]
     updated = json.loads(path.read_text(encoding="utf-8"))
-    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.1, 1.3, 0.25]
+    assert updated["Geometry"]["dustbin"][0]["scale"] == [1.1, 1.3, 0.3]
     assert centralize_dustbin(tmp_path) == []
 
 
