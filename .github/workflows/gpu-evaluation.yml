@@ -1,0 +1,57 @@
+name: Isaac Sim policy evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint:
+        description: Absolute pretrained_model path on the lab runner
+        required: true
+        type: string
+      episodes:
+        description: Number of RoboDojo evaluation episodes
+        required: true
+        default: "10"
+        type: string
+      policy_gpu:
+        description: GPU index for LeRobot inference
+        required: true
+        default: "1"
+        type: string
+      environment_gpu:
+        description: GPU index for Isaac Sim
+        required: true
+        default: "0"
+        type: string
+
+jobs:
+  evaluate:
+    runs-on: [self-hosted, linux, x64, robodojo-gpu]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install repository and XPolicyLab adapters
+        run: |
+          bash scripts/install_xpolicylab_adapter.sh \
+            "${{ vars.ROBODOJO_XPOLICYLAB }}" RoboDojo RoboDojoLeRobotTrain
+      - name: Evaluate checkpoint in Isaac Sim
+        run: |
+          conda run -n RoboDojo robodojosim evaluate-policy \
+            --xpolicylab "${{ vars.ROBODOJO_XPOLICYLAB }}" \
+            --checkpoint "${{ inputs.checkpoint }}" \
+            --output "${{ runner.temp }}/robodojo-evaluation" \
+            --episodes "${{ inputs.episodes }}" \
+            --policy-gpu "${{ inputs.policy_gpu }}" \
+            --env-gpu "${{ inputs.environment_gpu }}"
+      - name: Add metrics to the workflow summary
+        if: always()
+        run: |
+          if [[ -f "${{ runner.temp }}/robodojo-evaluation/summary.md" ]]; then
+            cat "${{ runner.temp }}/robodojo-evaluation/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+      - name: Upload evaluation report and videos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robodojo-policy-evaluation
+          path: ${{ runner.temp }}/robodojo-evaluation
+          if-no-files-found: warn

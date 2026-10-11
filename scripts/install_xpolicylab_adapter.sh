@@ -12,14 +12,17 @@ if [[ ! -f "${XPL_ROOT}/setup_policy_server.py" ]]; then
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SOURCE="${PROJECT_ROOT}/integration/xpolicylab/policy/bottle_scripted"
-DESTINATION="${XPL_ROOT}/policy/bottle_scripted"
-if [[ -e "${DESTINATION}" ]]; then
-    echo "Refusing to overwrite existing adapter: ${DESTINATION}" >&2
-    exit 3
-fi
-cp -R "${SOURCE}" "${DESTINATION}"
-echo "Installed adapter at ${DESTINATION}"
+for policy_name in bottle_scripted bottle_lerobot; do
+    SOURCE="${PROJECT_ROOT}/integration/xpolicylab/policy/${policy_name}"
+    DESTINATION="${XPL_ROOT}/policy/${policy_name}"
+    if [[ -e "${DESTINATION}" ]]; then
+        cp -R "${SOURCE}/." "${DESTINATION}/"
+        echo "Updated adapter at ${DESTINATION}"
+        continue
+    fi
+    cp -R "${SOURCE}" "${DESTINATION}"
+    echo "Installed adapter at ${DESTINATION}"
+done
 
 if [[ $# -ge 2 ]]; then
     source "$(conda info --base)/etc/profile.d/conda.sh"

@@ -7,10 +7,13 @@ from pathlib import Path
 from .campaign import run_campaign
 from .controller import BottleController, ControllerConfig
 from .datasets import summarize_dataset, write_splits
+from .evaluation import EvaluationSpec, run_evaluation, summarize_evaluation
+from .hub import format_push_plan, push_dataset, push_model
 from .layouts import centralize_dustbin, normalize_bottle_mass
 from .lerobot_export import export_lerobot
 from .mock_env import MockBottleEnv
 from .recording import EpisodeRecorder, validate_episode
+from .training import TrainingSpec, inspect_lerobot_dataset, run_training
 
 
 def _dry_run(args: argparse.Namespace) -> int:
@@ -161,6 +164,94 @@ def _export_lerobot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _episode_indices(value: str | None) -> tuple[int, ...] | None:
+    if not value:
+        return None
+    result = tuple(int(item.strip()) for item in value.split(",") if item.strip())
+    if not result or any(item < 0 for item in result):
+        raise ValueError("episodes must be a comma-separated list of non-negative LeRobot indices")
+    return result
+
+
+def _train(args: argparse.Namespace) -> int:
+    result = run_training(
+        TrainingSpec(
+            policy=args.policy,
+            dataset=Path(args.dataset),
+            output=Path(args.output),
+            repo_id=args.dataset_repo_id,
+            device=args.device,
+            gpu=args.gpu,
+            steps=args.steps,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            episodes=_episode_indices(args.episodes),
+            resume_from=Path(args.resume_from) if args.resume_from else None,
+            wandb=args.wandb,
+            push_to_hub=args.push_to_hub,
+            model_repo_id=args.model_repo_id,
+        ),
+        dry_run=args.dry_run,
+        executable=args.executable,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _inspect_lerobot(args: argparse.Namespace) -> int:
+    print(json.dumps(inspect_lerobot_dataset(args.dataset), indent=2, sort_keys=True))
+    return 0
+
+
+def _evaluate_policy(args: argparse.Namespace) -> int:
+    result = run_evaluation(
+        EvaluationSpec(
+            xpolicylab=Path(args.xpolicylab),
+            checkpoint=Path(args.checkpoint),
+            output=Path(args.output),
+            episodes=args.episodes,
+            seed=args.seed,
+            policy_gpu=args.policy_gpu,
+            environment_gpu=args.env_gpu,
+            policy_env=args.policy_env,
+            eval_env=args.eval_env,
+            gui=args.gui,
+        ),
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _summarize_evaluation(args: argparse.Namespace) -> int:
+    print(json.dumps(summarize_evaluation(args.output), indent=2, sort_keys=True))
+    return 0
+
+
+def _push_dataset(args: argparse.Namespace) -> int:
+    result = push_dataset(
+        args.dataset,
+        args.repo_id,
+        private=not args.public,
+        revision=args.revision,
+        dry_run=args.dry_run,
+    )
+    print(format_push_plan(result))
+    return 0
+
+
+def _push_model(args: argparse.Namespace) -> int:
+    result = push_model(
+        args.checkpoint,
+        args.repo_id,
+        private=not args.public,
+        revision=args.revision,
+        dry_run=args.dry_run,
+    )
+    print(format_push_plan(result))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RoboDojo scripted-controller utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -244,6 +335,57 @@ def build_parser() -> argparse.ArgumentParser:
     lerobot.add_argument("--repo-id", default="robodojosim/bottle-task")
     lerobot.add_argument("--overwrite", action="store_true")
     lerobot.set_defaults(func=_export_lerobot)
+    inspect_dataset = subparsers.add_parser("inspect-lerobot", help="validate a local training-facing LeRobot tree")
+    inspect_dataset.add_argument("--dataset", required=True)
+    inspect_dataset.set_defaults(func=_inspect_lerobot)
+    train = subparsers.add_parser("train", help="train ACT or Diffusion Policy with LeRobot")
+    train.add_argument("--policy", required=True, choices=("act", "diffusion"))
+    train.add_argument("--dataset", required=True)
+    train.add_argument("--output", required=True)
+    train.add_argument("--dataset-repo-id", default="robodojosim/bottle-policy")
+    train.add_argument("--device", default="cuda", choices=("cuda", "cpu", "mps"))
+    train.add_argument("--gpu", type=int)
+    train.add_argument("--steps", type=int, default=20_000)
+    train.add_argument("--batch-size", type=int, default=8)
+    train.add_argument("--num-workers", type=int, default=4)
+    train.add_argument("--episodes", help="comma-separated LeRobot episode indices")
+    train.add_argument("--resume-from", help="checkpoint train_config.json")
+    train.add_argument("--wandb", action="store_true")
+    train.add_argument("--push-to-hub", action="store_true")
+    train.add_argument("--model-repo-id")
+    train.add_argument("--executable", default="lerobot-train")
+    train.add_argument("--dry-run", action="store_true")
+    train.set_defaults(func=_train)
+    evaluate = subparsers.add_parser("evaluate-policy", help="run a LeRobot checkpoint in RoboDojo/Isaac Sim")
+    evaluate.add_argument("--xpolicylab", required=True)
+    evaluate.add_argument("--checkpoint", required=True)
+    evaluate.add_argument("--output", required=True)
+    evaluate.add_argument("--episodes", type=int, default=10)
+    evaluate.add_argument("--seed", type=int, default=0)
+    evaluate.add_argument("--policy-gpu", type=int, default=0)
+    evaluate.add_argument("--env-gpu", type=int, default=0)
+    evaluate.add_argument("--policy-env", default="RoboDojoLeRobotTrain")
+    evaluate.add_argument("--eval-env", default="RoboDojo")
+    evaluate.add_argument("--gui", action="store_true")
+    evaluate.add_argument("--dry-run", action="store_true")
+    evaluate.set_defaults(func=_evaluate_policy)
+    eval_report = subparsers.add_parser("summarize-evaluation", help="write JSON, CSV, and Markdown evaluation reports")
+    eval_report.add_argument("--output", required=True)
+    eval_report.set_defaults(func=_summarize_evaluation)
+    dataset_push = subparsers.add_parser("push-dataset", help="upload a validated LeRobot tree to Hugging Face")
+    dataset_push.add_argument("--dataset", required=True)
+    dataset_push.add_argument("--repo-id", required=True)
+    dataset_push.add_argument("--revision", default="main")
+    dataset_push.add_argument("--public", action="store_true", help="create a public repository (private by default)")
+    dataset_push.add_argument("--dry-run", action="store_true")
+    dataset_push.set_defaults(func=_push_dataset)
+    model_push = subparsers.add_parser("push-model", help="upload a validated checkpoint to Hugging Face")
+    model_push.add_argument("--checkpoint", required=True)
+    model_push.add_argument("--repo-id", required=True)
+    model_push.add_argument("--revision", default="main")
+    model_push.add_argument("--public", action="store_true", help="create a public repository (private by default)")
+    model_push.add_argument("--dry-run", action="store_true")
+    model_push.set_defaults(func=_push_model)
     return parser
 
 

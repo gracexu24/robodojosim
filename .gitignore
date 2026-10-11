@@ -6,6 +6,11 @@ __pycache__/
 *.egg-info/
 outputs/
 datasets/
+models/
+evaluations/
 *.hdf5
 *.partial.hdf5
+*.safetensors
+*.parquet
+*.mp4
 .DS_Store

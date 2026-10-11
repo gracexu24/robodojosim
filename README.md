@@ -26,6 +26,9 @@ Ubuntu + NVIDIA machine.
   metadata value of `0.22 kg`), with original JSON backups.
 - An explicit, reversible training-layout transform that turns the far-left floor bin into a 19.5 cm-tall tabletop
   receptacle at `[x=0, y=-0.10]`, aligns side-lying bottles, and reserves four non-colliding drop slots.
+- Reproducible ACT and Diffusion Policy training wrappers with dataset preflight checks and resumable run manifests.
+- A learned-policy XPolicyLab adapter with Cartesian action safety checks, Isaac Sim metrics, and Markdown reports.
+- Private-by-default Hugging Face dataset/model publishing without storing credentials or large artifacts in Git.
 
 The controller uses privileged object poses only as a scripted teacher. Those poses are stored separately under
 `/teacher`; policy observations remain the normal camera and robot state. This data is suitable for imitation
@@ -266,6 +269,29 @@ are intentionally excluded.
 
 See [docs/data-format.md](docs/data-format.md) for the contract and filtering rules.
 
+## Train and evaluate learned policies
+
+Training uses a separate LeRobot environment and does not start Isaac Sim. Validate a dataset and preview the exact
+ACT command with:
+
+```bash
+conda run -n RoboDojoLeRobotTrain robodojosim train \
+  --policy act \
+  --dataset /workspace/datasets/bottle-policy-50/lerobot \
+  --output /workspace/models/bottle-act \
+  --gpu 1 \
+  --dry-run
+```
+
+Remove `--dry-run` to train. Replace `act` with `diffusion` for Diffusion Policy. The `bottle_lerobot` XPolicyLab
+adapter loads the resulting `checkpoints/last/pretrained_model` directory and runs closed-loop inference against the
+normal three-camera RoboDojo observation. Evaluation writes JSON, CSV, and GitHub-readable Markdown metrics.
+
+Datasets and checkpoints stay outside Git. `robodojosim push-dataset` and `robodojosim push-model` validate and upload
+them to separate private Hugging Face repositories; `--public` is required to make either public. See
+[docs/training-and-inference.md](docs/training-and-inference.md) for setup, GUI evaluation, resume behavior, reports,
+and storage policy.
+
 ## Repository map
 
 ```text
@@ -273,9 +299,11 @@ src/robodojosim/controller.py        controller and safety checks
 src/robodojosim/recording.py         atomic XPolicyLab HDF5 writer
 src/robodojosim/robodojo_adapter.py  privileged RoboDojo scene bridge
 src/robodojosim/mock_env.py          non-physics test environment
-integration/xpolicylab/              installable policy adapter
+src/robodojosim/{training,inference}.py learned-policy pipeline
+integration/xpolicylab/              scripted and learned policy adapters
 configs/bottle_task.json             calibration surface
 configs/{policy,world_model}_data.json campaign variation profiles
+configs/training_{act,diffusion}.json learned-policy defaults
 scripts/                              Ubuntu install/run helpers
 tests/                                portable regression tests
 ```
