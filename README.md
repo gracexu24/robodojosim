@@ -289,6 +289,11 @@ normal three-camera RoboDojo observation. Evaluation writes JSON, CSV, and GitHu
 The wrapper explicitly uses LeRobot's PyAV video decoder so training does not depend on a TorchCodec build matching
 the lab machine's preinstalled CUDA-enabled PyTorch build.
 
+For an unattended collection-to-training run, `scripts/train_after_campaign.sh` waits for the campaign PID, requires
+the campaign to finish with at least 50 successful episodes, validates the final LeRobot export, and only then starts
+ACT training. Its arguments are `DATASET_ROOT CAMPAIGN_PID_FILE OUTPUT_DIR TRAIN_ENV`, followed by optional GPU, step,
+batch-size, and worker-count values.
+
 Datasets and checkpoints stay outside Git. `robodojosim push-dataset` and `robodojosim push-model` validate and upload
 them to separate private Hugging Face repositories; `--public` is required to make either public. See
 [docs/training-and-inference.md](docs/training-and-inference.md) for setup, GUI evaluation, resume behavior, reports,
