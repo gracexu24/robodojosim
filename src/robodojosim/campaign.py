@@ -55,6 +55,30 @@ def default_runner() -> Path:
     return Path(__file__).resolve().parents[2] / "scripts" / "run_collection.sh"
 
 
+def _evaluation_seed(xpolicylab: str | Path, initial_seed: int, pass_index: int) -> int:
+    """Cycle through the layout-seed directories installed by RoboDojo.
+
+    Pass indices remain monotonic for episode IDs and trajectory variants, but
+    RoboDojo's public asset bundle contains only a bounded set of seed
+    directories. Falling back to the historical arithmetic keeps dry runs and
+    custom runners usable when the asset tree is not locally available.
+    """
+
+    seed_root = (
+        Path(xpolicylab).resolve().parent / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5"
+    )
+    if not seed_root.is_dir():
+        return initial_seed + pass_index
+    seeds = sorted(int(path.name) for path in seed_root.iterdir() if path.is_dir() and path.name.isdigit())
+    if not seeds:
+        return initial_seed + pass_index
+    try:
+        start = seeds.index(initial_seed)
+    except ValueError:
+        start = initial_seed % len(seeds)
+    return seeds[(start + pass_index) % len(seeds)]
+
+
 def _load_state(path: Path, target: CampaignTarget) -> dict:
     if not path.exists():
         return {
@@ -122,6 +146,7 @@ def run_campaign(
 
         pass_index = int(state["next_pass"])
         evaluation_count = target.remaining_batch_size(stats, batch_size)
+        evaluation_seed = _evaluation_seed(xpolicylab, policy_seed, pass_index)
         environment = os.environ.copy()
         environment.update(
             {
@@ -138,7 +163,7 @@ def run_campaign(
             "bash",
             str(runner_path),
             str(Path(xpolicylab).resolve()),
-            str(policy_seed + pass_index),
+            str(evaluation_seed),
             policy_env,
             eval_env,
             str(output),
@@ -153,6 +178,7 @@ def run_campaign(
                         "evaluation_count": evaluation_count,
                         "episode_offset": pass_index * 100_000,
                         "trajectory_variant": pass_index,
+                        "layout_seed": evaluation_seed,
                         "current_stats": stats.to_dict(),
                     },
                     indent=2,

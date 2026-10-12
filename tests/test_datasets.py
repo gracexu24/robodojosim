@@ -83,6 +83,40 @@ def test_campaign_targets_and_dry_run(tmp_path, capsys):
     assert payload["episode_offset"] == 0
 
 
+def test_campaign_cycles_installed_layout_seeds_without_reusing_episode_ids(tmp_path, capsys):
+    xpolicylab = tmp_path / "RoboDojo" / "XPolicyLab"
+    seed_root = tmp_path / "RoboDojo" / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5"
+    for seed in (0, 1, 2):
+        (seed_root / str(seed)).mkdir(parents=True)
+    output = tmp_path / "campaign"
+    output.mkdir()
+    (output / "campaign_state.json").write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "campaign_id": "test",
+                "profile": "policy",
+                "next_pass": 7,
+                "no_progress_passes": 0,
+            }
+        )
+    )
+
+    run_campaign(
+        profile="policy",
+        xpolicylab=xpolicylab,
+        policy_env="RoboDojoPolicy",
+        eval_env="RoboDojo",
+        output=output,
+        policy_seed=0,
+        dry_run=True,
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["layout_seed"] == 1
+    assert payload["episode_offset"] == 700_000
+    assert payload["trajectory_variant"] == 7
+
+
 def test_policy_campaign_reaches_exactly_50_successes_and_writes_splits(tmp_path, monkeypatch):
     output = tmp_path / "campaign"
 
