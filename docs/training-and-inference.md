@@ -53,6 +53,8 @@ conda run -n RoboDojo robodojosim evaluate-policy \
 The policy process loads LeRobot in the policy environment. RoboDojo stays in its Isaac Sim environment. XPolicyLab
 passes camera/state observations to the policy and Cartesian end-effector actions back to the simulator. The adapter
 normalizes quaternions, clamps the calibrated workspace and grippers, and rejects non-finite actions.
+`--policy-env` accepts either a Conda environment name or an absolute virtual-environment path containing
+`bin/python`, which is useful when reusing the lab machine's existing CUDA-enabled PyTorch installation.
 
 Each episode produces atomic JSON metrics. The command also writes `metrics.json`, `episodes.csv`, and `summary.md`.
 Run `robodojosim summarize-evaluation --output <directory>` to rebuild those reports. Commit a small `summary.md` and
