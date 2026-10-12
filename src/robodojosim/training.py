@@ -149,20 +149,28 @@ def run_training(spec: TrainingSpec, *, dry_run: bool = False, executable: str =
     if dry_run:
         return manifest
 
-    output.mkdir(parents=True, exist_ok=True)
-    _write_json_atomic(manifest_path, manifest)
+    if spec.resume_from is None and output.exists():
+        raise FileExistsError(f"training output already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sidecar_path = output.parent / f".{output.name}.robodojosim_training.json"
+    tracking_path = manifest_path if output.is_dir() else sidecar_path
+    _write_json_atomic(tracking_path, manifest)
     try:
         subprocess.run(command, env=environment, check=True)
     except BaseException as exc:
         manifest["status"] = "failed"
         manifest["finished_unix"] = time.time()
         manifest["error"] = f"{type(exc).__name__}: {exc}"
-        _write_json_atomic(manifest_path, manifest)
+        failure_path = manifest_path if output.is_dir() else sidecar_path
+        _write_json_atomic(failure_path, manifest)
+        if failure_path != sidecar_path:
+            sidecar_path.unlink(missing_ok=True)
         raise
     manifest["status"] = "complete"
     manifest["finished_unix"] = time.time()
     manifest["checkpoint"] = str(output / "checkpoints" / "last" / "pretrained_model")
     _write_json_atomic(manifest_path, manifest)
+    sidecar_path.unlink(missing_ok=True)
     return manifest
 
 

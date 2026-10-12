@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import robodojosim.training as training_module
 from robodojosim.training import TrainingSpec, build_training_command, inspect_lerobot_dataset, run_training
 
 
@@ -68,3 +69,20 @@ def test_training_dry_run_validates_without_creating_output(tmp_path):
     assert result["status"] == "planned"
     assert result["cuda_visible_devices"] == "1"
     assert not output.exists()
+
+
+def test_training_leaves_output_creation_to_lerobot(tmp_path, monkeypatch):
+    dataset = make_lerobot_dataset(tmp_path / "dataset")
+    output = tmp_path / "model"
+
+    def fake_run(command, env, check):
+        assert not output.exists()
+        assert check is True
+        assert env["CUDA_VISIBLE_DEVICES"] == "0"
+        output.mkdir()
+
+    monkeypatch.setattr(training_module.subprocess, "run", fake_run)
+    result = run_training(TrainingSpec("act", dataset, output, gpu=0), executable="train")
+    assert result["status"] == "complete"
+    assert json.loads((output / "robodojosim_training.json").read_text())["status"] == "complete"
+    assert not (tmp_path / ".model.robodojosim_training.json").exists()
