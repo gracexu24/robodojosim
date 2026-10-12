@@ -286,6 +286,8 @@ conda run -n RoboDojoLeRobotTrain robodojosim train \
 Remove `--dry-run` to train. Replace `act` with `diffusion` for Diffusion Policy. The `bottle_lerobot` XPolicyLab
 adapter loads the resulting `checkpoints/last/pretrained_model` directory and runs closed-loop inference against the
 normal three-camera RoboDojo observation. Evaluation writes JSON, CSV, and GitHub-readable Markdown metrics.
+The wrapper explicitly uses LeRobot's PyAV video decoder so training does not depend on a TorchCodec build matching
+the lab machine's preinstalled CUDA-enabled PyTorch build.
 
 Datasets and checkpoints stay outside Git. `robodojosim push-dataset` and `robodojosim push-model` validate and upload
 them to separate private Hugging Face repositories; `--public` is required to make either public. See

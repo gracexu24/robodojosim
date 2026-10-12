@@ -55,6 +55,7 @@ def test_build_training_commands_include_policy_specific_closed_loop_horizons(tm
     )
     assert "--policy.chunk_size=50" in act
     assert "--policy.n_action_steps=10" in act
+    assert "--dataset.video_backend=pyav" in act
     assert "--dataset.episodes=[0,2,4]" in act
     diffusion = build_training_command(TrainingSpec("diffusion", dataset, tmp_path / "diffusion"), executable="train")
     assert "--policy.n_obs_steps=2" in diffusion

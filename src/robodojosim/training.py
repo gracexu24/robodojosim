@@ -96,6 +96,10 @@ def build_training_command(spec: TrainingSpec, executable: str = "lerobot-train"
         executable,
         f"--dataset.repo_id={spec.repo_id}",
         f"--dataset.root={spec.dataset.resolve()}",
+        # PyAV is compatible with LeRobot's video dataset on the CUDA-enabled
+        # PyTorch environment used for training.  Selecting it explicitly also
+        # avoids TorchCodec/PyTorch binary ABI mismatches on shared lab hosts.
+        "--dataset.video_backend=pyav",
         f"--policy.type={spec.policy}",
         f"--policy.device={spec.device}",
         f"--output_dir={spec.output.resolve()}",
