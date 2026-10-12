@@ -1,7 +1,18 @@
+import math
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
-from robodojosim.inference import action_mapping, observation_images, observation_state, sanitize_action
+from robodojosim.inference import (
+    LeRobotPolicyRuntime,
+    PolicySafetyConfig,
+    PolicySafetyFilter,
+    action_mapping,
+    observation_images,
+    observation_state,
+    sanitize_action,
+)
 from robodojosim.mock_env import MockBottleEnv
 
 
@@ -49,3 +60,70 @@ def test_policy_action_rejects_non_finite_and_zero_quaternion():
     action[3:7] = 0
     with pytest.raises(ValueError, match="zero-length quaternion"):
         sanitize_action(action)
+
+
+def _state_and_action():
+    state = np.zeros(16, dtype=np.float32)
+    state[0:3] = [-0.3, 0.0, 0.7]
+    state[3] = 1.0
+    state[7] = 1.0
+    state[8:11] = [0.3, 0.0, 0.7]
+    state[11] = 1.0
+    state[15] = 1.0
+    return state, state.copy()
+
+
+def test_policy_safety_filter_rate_limits_pose_and_debounces_close():
+    state, action = _state_and_action()
+    action[0:3] += [0.3, 0.0, 0.0]
+    action[3:7] = [0.0, 1.0, 0.0, 0.0]
+    action[7] = 0.0
+    safety = PolicySafetyFilter()
+
+    first = safety.apply(action, state)
+    assert np.isclose(np.linalg.norm(first[0:3] - state[0:3]), 0.015)
+    angle = 2.0 * math.acos(float(np.clip(np.dot(first[3:7], state[3:7]), -1.0, 1.0)))
+    assert np.isclose(angle, math.radians(5.0))
+    assert first[7] == 1.0
+
+    second = safety.apply(action, state)
+    assert second[7] == 0.0
+    summary = safety.summary()
+    assert summary["steps"] == 2
+    assert summary["position_limited"][0] == 2
+    assert summary["rotation_limited"][0] == 2
+    assert summary["close_commands"][0] == 1
+
+
+def test_policy_safety_filter_latches_closed_until_stable_release():
+    config = PolicySafetyConfig(open_debounce_steps=3, close_debounce_steps=1, minimum_closed_steps=3)
+    safety = PolicySafetyFilter(config)
+    state, action = _state_and_action()
+    action[7] = 0.0
+    assert safety.apply(action, state)[7] == 0.0
+
+    action[7] = 1.0
+    assert safety.apply(action, state)[7] == 0.0
+    assert safety.apply(action, state)[7] == 0.0
+    assert safety.apply(action, state)[7] == 1.0
+    summary = safety.summary()
+    assert summary["open_commands"][0] == 1
+    assert summary["suppressed_open_steps"][0] == 2
+
+
+def test_policy_safety_filter_aligns_equivalent_quaternion_signs():
+    state, action = _state_and_action()
+    action[3:7] = [-1.0, 0.0, 0.0, 0.0]
+    filtered = PolicySafetyFilter().apply(action, state)
+    np.testing.assert_allclose(filtered[3:7], state[3:7])
+
+
+def test_runtime_forces_act_to_replan_each_step():
+    runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
+    runtime.config = SimpleNamespace(n_action_steps=10)
+    runtime.policy = SimpleNamespace(config=SimpleNamespace(n_action_steps=10), reset_count=0)
+    runtime.policy.reset = lambda: setattr(runtime.policy, "reset_count", runtime.policy.reset_count + 1)
+    runtime._force_replan_each_step()
+    assert runtime.config.n_action_steps == 1
+    assert runtime.policy.config.n_action_steps == 1
+    assert runtime.policy.reset_count == 1
