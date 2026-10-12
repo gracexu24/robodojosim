@@ -197,8 +197,9 @@ def _export_campaign_lerobot(output: Path, profile: str, *, lerobot_env: str | N
                 profile,
                 "--repo-id",
                 repo_id,
+                "--overwrite",
             ],
             check=True,
         )
         return destination
-    return export_lerobot(output, destination, profile=profile, repo_id=repo_id)
+    return export_lerobot(output, destination, profile=profile, repo_id=repo_id, overwrite=True)

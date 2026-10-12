@@ -114,3 +114,17 @@ def test_policy_campaign_reaches_exactly_50_successes_and_writes_splits(tmp_path
     assert state["status"] == "complete"
     assert state["next_pass"] == 2
     assert (output / "splits.json").exists()
+
+
+def test_campaign_refreshes_existing_lerobot_export(tmp_path, monkeypatch):
+    output = tmp_path / "campaign"
+    captured = {}
+
+    def fake_run(command, check):
+        captured["command"] = command
+        assert check is True
+
+    monkeypatch.setattr(campaign_module.subprocess, "run", fake_run)
+    result = campaign_module._export_campaign_lerobot(output, "policy", lerobot_env="LeRobot")
+    assert result == output / "lerobot"
+    assert "--overwrite" in captured["command"]
