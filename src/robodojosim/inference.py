@@ -134,7 +134,10 @@ class LeRobotPolicyRuntime:
         return config, policy.to(self.device)
 
     def _load_processors(self) -> tuple[Any, Any]:
-        required = ("preprocessor_config.json", "postprocessor_config.json")
+        # LeRobot 0.4.4 saves these pipelines under the policy-prefixed names
+        # consumed by make_pre_post_processors().  The older generic names are
+        # used only by the migration utility and are not emitted by training.
+        required = ("policy_preprocessor.json", "policy_postprocessor.json")
         missing = [name for name in required if not (self.checkpoint / name).is_file()]
         if missing:
             raise FileNotFoundError(
