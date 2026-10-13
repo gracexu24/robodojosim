@@ -25,6 +25,7 @@
   "direct_left_max_x": 0.08,
   "direct_right_drop": true,
   "gripper_hold_steps": 5,
+  "release_settle_steps": 10,
   "pregrasp_settle_steps": 4,
   "grasp_settle_steps": 0,
   "lift_hold_steps": 5,

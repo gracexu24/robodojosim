@@ -66,6 +66,7 @@ class ControllerConfig:
     open_value: float = 1.0
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
+    release_settle_steps: int | None = None
     pregrasp_settle_steps: int = 0
     grasp_settle_steps: int = 0
     lift_hold_steps: int = 1
@@ -145,6 +146,8 @@ class ControllerConfig:
             raise ValueError("max_home_translation_step must be positive when provided")
         if self.gripper_hold_steps < 1 or self.lift_hold_steps < 1 or self.max_actions < 1:
             raise ValueError("gripper_hold_steps, lift_hold_steps, and max_actions must be positive")
+        if self.release_settle_steps is not None and self.release_settle_steps < 1:
+            raise ValueError("release_settle_steps must be positive when provided")
         if self.pregrasp_settle_steps < 0 or self.grasp_settle_steps < 0:
             raise ValueError("pregrasp_settle_steps and grasp_settle_steps cannot be negative")
         if self.rim_clearance < 0:
@@ -952,7 +955,8 @@ class BottleController:
             if stage == "release":
                 assert self._active_arm is not None
                 self._command_grippers[self._active_arm] = self.config.open_value
-                if self._feedback_repeat >= self.config.gripper_hold_steps:
+                settle_steps = self.config.release_settle_steps or self.config.gripper_hold_steps
+                if self._feedback_repeat >= settle_steps:
                     self._feedback_repeat = 0
                     position = snapshot.arms[self._active_arm].position + np.array(
                         [0.0, 0.0, self.config.retreat_height]
@@ -1316,7 +1320,8 @@ class BottleController:
         bottom = bbox_bottom(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
         top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
         slack = self.config.drop_validation_height_slack
-        return bool(np.min(corners[:, 2]) >= bottom - slack and np.max(corners[:, 2]) <= top + slack)
+        bottle_bottom = float(np.min(corners[:, 2]))
+        return bool(bottom - slack <= bottle_bottom <= top + slack)
 
     def _bottle_is_inside_bin_xy(
         self, snapshot: SceneSnapshot, label: str | None, *, margin: float | None = None

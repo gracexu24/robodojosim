@@ -21,6 +21,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.carry_rim_clearance == 0.06
         assert config.place_clearance is None
         assert config.retreat_height == 0.14
+        assert config.release_settle_steps == 10
         if name != "world_model_data.json":
             assert config.max_carry_translation_step == 0.015
             assert config.lift_hold_steps == 3
@@ -677,6 +678,29 @@ def test_live_pose_feedback_requires_a_fresh_snapshot_for_every_action():
     controller.reset(env.snapshot())
     with pytest.raises(RuntimeError, match="fresh scene snapshot"):
         controller.next_action()
+
+
+def test_bin_validation_accepts_upright_bottle_with_bottom_inside():
+    env = MockBottleEnv(seed=0)
+    snapshot = env.snapshot()
+    original = snapshot.bottles["bottle0"]
+    bottles = dict(snapshot.bottles)
+    bottles["bottle0"] = ObjectState(
+        Pose([snapshot.dustbin.pose.position[0], snapshot.dustbin.pose.position[1], 0.58], [1, 0, 0, 0]),
+        np.array([-0.03, -0.03, -0.08, 0.03, 0.03, 0.08]),
+    )
+    inside = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+    controller = BottleController(ControllerConfig(live_pose_feedback=True))
+    controller._active_bottle = "bottle0"
+
+    assert controller._bottle_is_inside_bin(inside, "bottle0")
+
+    bottles["bottle0"] = ObjectState(
+        Pose([snapshot.dustbin.pose.position[0], snapshot.dustbin.pose.position[1], 0.80], [1, 0, 0, 0]),
+        original.bbox,
+    )
+    above = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+    assert not controller._bottle_is_inside_bin(above, "bottle0")
 
 
 def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
