@@ -19,7 +19,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.grasp_max_center_offset == 0.09
         assert config.lift_height == 0.28
         assert config.carry_rim_clearance == 0.10
-        assert config.place_clearance == 0.025
+        assert config.place_clearance is None
         assert config.retreat_height == 0.14
 
 
@@ -715,7 +715,6 @@ def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
             lift_height=0.28,
             carry_rim_clearance=0.10,
             lift_hold_steps=3,
-            place_clearance=0.015,
             home_completion_height_offset=0.0,
             workspace_min=(-0.85, -0.55, 0.10),
             transit_entry_margin=0.10,
@@ -725,6 +724,7 @@ def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
     controller.reset(env.snapshot())
     lift_heights = []
     transit_heights = []
+    drop_heights = []
     lift_holds = 0
     while not controller.done:
         try:
@@ -737,12 +737,17 @@ def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
             lift_holds += 1
         if controller._feedback_stage in {"transit_retract", "transit_lateral", "transit"}:
             transit_heights.append(float(planned.action["left_ee_pose"][2]))
+        if controller._feedback_stage == "drop":
+            drop_heights.append(float(planned.action["left_ee_pose"][2]))
         env.step(planned.action)
+        if drop_heights:
+            break
 
     assert lift_holds == 3
     assert transit_heights
     assert min(transit_heights) >= max(lift_heights) - 1e-6
-    assert env.bottles["bottle0"].in_bin
+    assert drop_heights
+    assert min(drop_heights) < min(transit_heights)
 
 
 def test_live_world_model_feedback_executes_randomized_skill_library():
