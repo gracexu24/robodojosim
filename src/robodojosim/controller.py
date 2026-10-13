@@ -57,6 +57,7 @@ class ControllerConfig:
     drop_clearance: float = 0.18
     place_clearance: float | None = None
     rim_clearance: float = 0.03
+    carry_rim_clearance: float | None = None
     retreat_height: float = 0.14
     bottle_fallback_half_height: float = 0.045
     dustbin_fallback_half_height: float = 0.25
@@ -148,6 +149,8 @@ class ControllerConfig:
             raise ValueError("pregrasp_settle_steps and grasp_settle_steps cannot be negative")
         if self.rim_clearance < 0:
             raise ValueError("rim_clearance cannot be negative")
+        if self.carry_rim_clearance is not None and self.carry_rim_clearance < self.rim_clearance:
+            raise ValueError("carry_rim_clearance must be at least rim_clearance when provided")
         if self.place_clearance is not None and self.place_clearance < 0:
             raise ValueError("place_clearance cannot be negative when provided")
         if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
@@ -386,6 +389,7 @@ class BottleController:
             raise StopIteration("scripted controller is done")
         if self._feedback_stage in {
             "lift",
+            "lift_settle",
             "hold",
             "carry",
             "regrasp_return",
@@ -618,6 +622,9 @@ class BottleController:
                     self._feedback_repeat = 0
                     self._feedback_stage = "close"
                     continue
+                if stalled:
+                    self._begin_recovery(snapshot, "grasp target stalled outside the calibrated grasp envelope")
+                    continue
                 step = self.config.max_grasp_translation_step or self.config.max_translation_step
                 return self._feedback_move_action(snapshot, target, Phase.GRASP, step)
 
@@ -645,13 +652,8 @@ class BottleController:
                     if self.config.stop_after_lift:
                         self._feedback_complete = True
                         raise StopIteration("scripted controller completed requested lift")
-                    if self.config.world_model_movements and not self._world_skills_complete:
-                        self._carry_anchor = snapshot.arms[self._active_arm]
-                        self._feedback_repeat = 0
-                        self._feedback_stage = "hold"
-                    else:
-                        self._active_skill = "pick_place"
-                        self._feedback_stage = "transit_retract"
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "lift_settle"
                     continue
                 if stalled and not self._lift_retracted:
                     current = snapshot.arms[self._active_arm]
@@ -674,6 +676,19 @@ class BottleController:
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.LIFT, self.config.max_lift_translation_step
                 )
+
+            if stage == "lift_settle":
+                if self._feedback_repeat < self.config.lift_hold_steps:
+                    self._feedback_repeat += 1
+                    return self._feedback_hold_action(snapshot, Phase.HOLD)
+                self._feedback_repeat = 0
+                if self.config.world_model_movements and not self._world_skills_complete:
+                    self._carry_anchor = snapshot.arms[self._active_arm]
+                    self._feedback_stage = "hold"
+                else:
+                    self._active_skill = "pick_place"
+                    self._feedback_stage = "transit_retract"
+                continue
 
             if stage == "hold":
                 assert self._active_bottle is not None
@@ -804,6 +819,11 @@ class BottleController:
                     desired = self._drop_target(snapshot, place=False)
                     position = desired.position.copy()
                     position[1] = self.config.transit_corridor_y
+                    position[2] = max(
+                        position[2],
+                        snapshot.arms[self._active_arm].position[2],
+                        self._carry_safe_tool_height(snapshot),
+                    )
                     self._feedback_target = Pose(position, desired.quaternion)
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
@@ -824,7 +844,14 @@ class BottleController:
             if stage == "transit":
                 assert self._active_arm is not None
                 if self._feedback_target is None:
-                    self._feedback_target = self._drop_target(snapshot, place=False)
+                    desired = self._drop_target(snapshot, place=False)
+                    position = desired.position.copy()
+                    position[2] = max(
+                        position[2],
+                        snapshot.arms[self._active_arm].position[2],
+                        self._carry_safe_tool_height(snapshot),
+                    )
+                    self._feedback_target = Pose(position, desired.quaternion)
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
                 if reached or (stalled and self._bottle_is_inside_bin_xy(snapshot, self._active_bottle)):
@@ -876,9 +903,14 @@ class BottleController:
 
             if stage == "retreat":
                 assert self._feedback_target is not None
-                if self._target_reached(snapshot, self._feedback_target):
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or (stalled and self._bottle_is_inside_bin(snapshot, self._active_bottle)):
                     self._feedback_target = None
                     self._feedback_stage = "home_raise"
+                    continue
+                if stalled:
+                    self._begin_recovery(snapshot, "post-release retreat stalled before the bottle settled in the bin")
                     continue
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
@@ -1005,12 +1037,18 @@ class BottleController:
     def _lift_target(self, snapshot: SceneSnapshot) -> Pose:
         assert self._active_arm is not None and self._carry_orientation is not None
         current = snapshot.arms[self._active_arm]
-        dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
         target_z = max(
             current.position[2] + self.config.lift_height,
-            dustbin_top + self.config.rim_clearance + self._grasp_to_bottom,
+            self._carry_safe_tool_height(snapshot),
         )
         return Pose([current.position[0], current.position[1], target_z], self._carry_orientation)
+
+    def _carry_safe_tool_height(self, snapshot: SceneSnapshot) -> float:
+        dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
+        clearance = self.config.carry_rim_clearance
+        if clearance is None:
+            clearance = self.config.rim_clearance
+        return float(dustbin_top + clearance + self._grasp_to_bottom)
 
     def _drop_target(self, snapshot: SceneSnapshot, *, place: bool) -> Pose:
         assert self._active_bottle is not None and self._active_arm is not None
@@ -1042,7 +1080,10 @@ class BottleController:
         bottle = snapshot.bottles[self._active_bottle]
         bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
         dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
-        return bottle_bottom >= dustbin_top + self.config.rim_clearance
+        clearance = self.config.carry_rim_clearance
+        if clearance is None:
+            clearance = self.config.rim_clearance
+        return bottle_bottom >= dustbin_top + clearance
 
     def _target_reached(self, snapshot: SceneSnapshot, target: Pose) -> bool:
         assert self._active_arm is not None
@@ -1158,6 +1199,7 @@ class BottleController:
             "grasp": Phase.GRASP,
             "close": Phase.CLOSE,
             "lift": Phase.LIFT,
+            "lift_settle": Phase.HOLD,
             "hold": Phase.HOLD,
             "carry": Phase.CARRY,
             "regrasp_return": Phase.CARRY,

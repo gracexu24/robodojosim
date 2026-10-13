@@ -17,6 +17,8 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.grasp_settle_steps == 0
         assert config.grasp_max_center_offset == 0.09
+        assert config.lift_height == 0.28
+        assert config.carry_rim_clearance == 0.10
 
 
 def test_pose_normalizes_quaternion():
@@ -698,6 +700,46 @@ def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
 
     assert "transit_retract" in stages
     assert "transit_lateral" in stages
+    assert env.bottles["bottle0"].in_bin
+
+
+def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0",),
+            bottle_limit=1,
+            live_pose_feedback=True,
+            lift_height=0.28,
+            carry_rim_clearance=0.10,
+            lift_hold_steps=3,
+            place_clearance=0.015,
+            home_completion_height_offset=0.0,
+            workspace_min=(-0.85, -0.55, 0.10),
+            transit_entry_margin=0.10,
+            max_actions=350,
+        )
+    )
+    controller.reset(env.snapshot())
+    lift_heights = []
+    transit_heights = []
+    lift_holds = 0
+    while not controller.done:
+        try:
+            planned = controller.next_action(env.snapshot())
+        except StopIteration:
+            break
+        if planned.phase is Phase.LIFT:
+            lift_heights.append(float(planned.action["left_ee_pose"][2]))
+        if controller._feedback_stage == "lift_settle":
+            lift_holds += 1
+        if controller._feedback_stage in {"transit_retract", "transit_lateral", "transit"}:
+            transit_heights.append(float(planned.action["left_ee_pose"][2]))
+        env.step(planned.action)
+
+    assert lift_holds == 3
+    assert transit_heights
+    assert min(transit_heights) >= max(lift_heights) - 1e-6
     assert env.bottles["bottle0"].in_bin
 
 
