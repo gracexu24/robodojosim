@@ -15,7 +15,7 @@
   "align_grasp_to_bbox_major_axis": true,
   "left_drop_position_offset": [0.0, 0.0, 0.0],
   "right_drop_position_offset": [0.0, 0.0, 0.0],
-  "drop_slot_offsets": [[0.0, -0.06], [0.0, 0.02], [0.0, -0.06], [0.0, 0.02]],
+  "drop_slot_offsets": [[-0.12, -0.08], [-0.20, -0.08], [0.12, -0.08], [0.18, -0.08]],
   "drop_clearance": 0.10,
   "place_clearance": null,
   "rim_clearance": 0.03,
