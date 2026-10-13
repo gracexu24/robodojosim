@@ -17,16 +17,10 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.grasp_settle_steps == 0
         assert config.grasp_max_center_offset == 0.09
-        assert config.lift_height == 0.28
-        assert config.carry_rim_clearance == 0.06
-        assert config.place_clearance is None
-        assert config.retreat_height == 0.14
-        assert config.release_settle_steps == 10
-        assert config.right_drop_position_offset == [0.0, 0.0, 0.0]
-        assert config.drop_slot_offsets == [[-0.12, -0.08], [-0.20, -0.08], [0.12, -0.08], [0.18, -0.08]]
-        if name != "world_model_data.json":
-            assert config.max_carry_translation_step == 0.010
-            assert config.lift_hold_steps == 3
+        assert config.lift_height == 0.24
+        assert config.drop_clearance == 0.14
+        assert config.rim_clearance == 0.05
+        assert config.gripper_hold_steps == 7
 
 
 def test_pose_normalizes_quaternion():
@@ -682,29 +676,6 @@ def test_live_pose_feedback_requires_a_fresh_snapshot_for_every_action():
         controller.next_action()
 
 
-def test_bin_validation_accepts_upright_bottle_with_bottom_inside():
-    env = MockBottleEnv(seed=0)
-    snapshot = env.snapshot()
-    original = snapshot.bottles["bottle0"]
-    bottles = dict(snapshot.bottles)
-    bottles["bottle0"] = ObjectState(
-        Pose([snapshot.dustbin.pose.position[0], snapshot.dustbin.pose.position[1], 0.58], [1, 0, 0, 0]),
-        np.array([-0.03, -0.03, -0.08, 0.03, 0.03, 0.08]),
-    )
-    inside = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
-    controller = BottleController(ControllerConfig(live_pose_feedback=True))
-    controller._active_bottle = "bottle0"
-
-    assert controller._bottle_is_inside_bin(inside, "bottle0")
-
-    bottles["bottle0"] = ObjectState(
-        Pose([snapshot.dustbin.pose.position[0], snapshot.dustbin.pose.position[1], 0.80], [1, 0, 0, 0]),
-        original.bbox,
-    )
-    above = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
-    assert not controller._bottle_is_inside_bin(above, "bottle0")
-
-
 def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
     env = MockBottleEnv(seed=0)
     controller = BottleController(
@@ -732,72 +703,6 @@ def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
     assert "transit_retract" in stages
     assert "transit_lateral" in stages
     assert env.bottles["bottle0"].in_bin
-
-
-def test_live_pose_feedback_reaches_configured_bin_slot_before_drop():
-    env = MockBottleEnv(seed=0)
-    slot = np.array([0.12, 0.14])
-    controller = BottleController(
-        ControllerConfig(
-            bottle_labels=("bottle0",),
-            bottle_limit=1,
-            live_pose_feedback=True,
-            drop_slot_offsets=(tuple(slot),),
-            workspace_min=(-0.85, -0.55, 0.10),
-            max_actions=350,
-        )
-    )
-    controller.reset(env.snapshot())
-    while controller._feedback_stage != "drop":
-        planned = controller.next_action(env.snapshot())
-        env.step(planned.action)
-
-    np.testing.assert_allclose(controller._place_xy, env.dustbin.pose.position[:2] + slot, atol=0.01)
-
-
-def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
-    env = MockBottleEnv(seed=0)
-    controller = BottleController(
-        ControllerConfig(
-            bottle_labels=("bottle0",),
-            bottle_limit=1,
-            live_pose_feedback=True,
-            lift_height=0.28,
-            carry_rim_clearance=0.10,
-            lift_hold_steps=3,
-            home_completion_height_offset=0.0,
-            workspace_min=(-0.85, -0.55, 0.10),
-            transit_entry_margin=0.10,
-            max_actions=350,
-        )
-    )
-    controller.reset(env.snapshot())
-    lift_heights = []
-    transit_heights = []
-    drop_heights = []
-    lift_holds = 0
-    while not controller.done:
-        try:
-            planned = controller.next_action(env.snapshot())
-        except StopIteration:
-            break
-        if planned.phase is Phase.LIFT:
-            lift_heights.append(float(planned.action["left_ee_pose"][2]))
-        if controller._feedback_stage == "lift_settle":
-            lift_holds += 1
-        if controller._feedback_stage in {"transit_retract", "transit_lateral", "transit"}:
-            transit_heights.append(float(planned.action["left_ee_pose"][2]))
-        if controller._feedback_stage == "drop":
-            drop_heights.append(float(planned.action["left_ee_pose"][2]))
-        env.step(planned.action)
-        if drop_heights:
-            break
-
-    assert lift_holds == 3
-    assert transit_heights
-    assert min(transit_heights) >= max(lift_heights) - 1e-6
-    assert drop_heights
-    assert min(drop_heights) < min(transit_heights)
 
 
 def test_live_world_model_feedback_executes_randomized_skill_library():
