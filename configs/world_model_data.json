@@ -65,5 +65,6 @@
   "drop_validation_half_extents": [0.29, 0.31],
   "grasp_xy_tolerance": 0.012,
   "grasp_vertical_residual_max": 0.055,
-  "grasp_orientation_tolerance_degrees": 12.0
+  "grasp_orientation_tolerance_degrees": 12.0,
+  "lift_retract_y": -0.18
 }

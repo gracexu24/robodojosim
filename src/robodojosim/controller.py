@@ -276,6 +276,7 @@ class BottleController:
         self._carry_orientation: np.ndarray | None = None
         self._grasp_to_bottom = 0.0
         self._lift_retracted = False
+        self._lift_goal_z: float | None = None
         self._grasp_relative_position: np.ndarray | None = None
         self._place_xy: np.ndarray | None = None
         self._retry_counts: dict[str, int] = {}
@@ -337,6 +338,7 @@ class BottleController:
         self._carry_orientation = None
         self._grasp_to_bottom = 0.0
         self._lift_retracted = False
+        self._lift_goal_z = None
         self._grasp_relative_position = None
         self._place_xy = None
         self._retry_counts = {}
@@ -389,6 +391,7 @@ class BottleController:
             raise StopIteration("scripted controller is done")
         if self._feedback_stage in {
             "lift",
+            "lift_retract",
             "lift_settle",
             "hold",
             "carry",
@@ -433,6 +436,7 @@ class BottleController:
                 self._grasp_relative_position = None
                 self._carry_orientation = None
                 self._lift_retracted = False
+                self._lift_goal_z = None
                 self._place_xy = None
                 self._feedback_repeat = 0
                 self._world_skills_complete = False
@@ -638,6 +642,7 @@ class BottleController:
                     )
                     self._feedback_repeat = 0
                     self._feedback_target = self._lift_target(snapshot)
+                    self._lift_goal_z = float(self._feedback_target.position[2])
                     self._feedback_stage = "lift"
                     continue
                 self._feedback_repeat += 1
@@ -657,21 +662,36 @@ class BottleController:
                     continue
                 if stalled and not self._lift_retracted:
                     current = snapshot.arms[self._active_arm]
-                    position = self._feedback_target.position.copy()
-                    position[0] = current.position[0]
+                    position = current.position.copy()
                     position[1] = min(current.position[1], self.config.lift_retract_y)
                     self._feedback_target = Pose(position, self._feedback_target.quaternion)
                     self._lift_retracted = True
-                    self._best_tracking_error = float("inf")
-                    self._stall_count = 0
+                    self._feedback_stage = "lift_retract"
                     if os.environ.get("ROBODOJOSIM_CONTROLLER_DEBUG") == "1":
                         print(
-                            f"[bottle_controller] step={self._executed_total} state=lift "
+                            f"[bottle_controller] step={self._executed_total} state=lift_retract "
                             f"recompute=retract target={position.round(5).tolist()}"
                         )
                     continue
                 if stalled:
                     self._begin_recovery(snapshot, "lift stalled before the bottle cleared the bin rim")
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.LIFT, self.config.max_lift_translation_step
+                )
+
+            if stage == "lift_retract":
+                assert self._active_arm is not None and self._feedback_target is not None
+                reached = self._target_reached(snapshot, self._feedback_target)
+                stalled = self._movement_stalled(snapshot, self._feedback_target)
+                if reached or stalled:
+                    assert self._lift_goal_z is not None and self._carry_orientation is not None
+                    current = snapshot.arms[self._active_arm]
+                    self._feedback_target = Pose(
+                        [current.position[0], current.position[1], self._lift_goal_z],
+                        self._carry_orientation,
+                    )
+                    self._feedback_stage = "lift"
                     continue
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.LIFT, self.config.max_lift_translation_step
@@ -988,6 +1008,7 @@ class BottleController:
         self._recovering = True
         self._grasp_relative_position = None
         self._place_xy = None
+        self._lift_goal_z = None
         self._feedback_stage = "open"
 
     def _carried_bottle_was_lost(self, snapshot: SceneSnapshot) -> bool:
@@ -1199,6 +1220,7 @@ class BottleController:
             "grasp": Phase.GRASP,
             "close": Phase.CLOSE,
             "lift": Phase.LIFT,
+            "lift_retract": Phase.LIFT,
             "lift_settle": Phase.HOLD,
             "hold": Phase.HOLD,
             "carry": Phase.CARRY,
