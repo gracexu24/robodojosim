@@ -413,7 +413,10 @@ class BottleController:
                 self._feedback_repeat = 0
                 self._feedback_stage = "release"
             else:
-                self._begin_recovery(snapshot, "bottle stopped following the closed gripper")
+                self._begin_recovery(
+                    snapshot,
+                    f"bottle stopped following the closed gripper during {self._feedback_stage}",
+                )
 
         # A state may already be satisfied by the latest simulator result. In
         # that case advance immediately instead of emitting redundant holds.
