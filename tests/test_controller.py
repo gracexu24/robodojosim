@@ -17,9 +17,9 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.grasp_settle_steps == 0
         assert config.grasp_max_center_offset == 0.09
-        assert config.lift_height == 0.24
-        assert config.drop_clearance == 0.14
-        assert config.rim_clearance == 0.05
+        assert config.lift_height == 0.22
+        assert config.drop_clearance == 0.12
+        assert config.rim_clearance == 0.04
         assert config.gripper_hold_steps == 7
 
 
