@@ -653,7 +653,8 @@ class BottleController:
                 assert self._feedback_target is not None
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
-                if reached or (stalled and self._bottle_clears_rim(snapshot)):
+                clears_rim = self._bottle_clears_rim(snapshot)
+                if (reached or stalled) and clears_rim:
                     self._feedback_target = None
                     if self.config.stop_after_lift:
                         self._feedback_complete = True
@@ -675,6 +676,26 @@ class BottleController:
                         )
                     continue
                 if stalled:
+                    gap = self._bottle_rim_clearance_gap(snapshot)
+                    current = snapshot.arms[self._active_arm]
+                    corrected_z = min(
+                        self.config.workspace_max[2] - 0.02,
+                        current.position[2] + gap + 0.01,
+                    )
+                    if corrected_z > current.position[2] + self.config.target_position_tolerance:
+                        self._feedback_target = Pose(
+                            [current.position[0], current.position[1], corrected_z],
+                            self._carry_orientation,
+                        )
+                        self._lift_goal_z = corrected_z
+                        self._best_tracking_error = float("inf")
+                        self._stall_count = 0
+                        if os.environ.get("ROBODOJOSIM_CONTROLLER_DEBUG") == "1":
+                            print(
+                                f"[bottle_controller] step={self._executed_total} state=lift "
+                                f"recompute=bbox_clearance gap={gap:.5f} target_z={corrected_z:.5f}"
+                            )
+                        continue
                     self._begin_recovery(snapshot, "lift stalled before the bottle cleared the bin rim")
                     continue
                 return self._feedback_move_action(
@@ -1118,6 +1139,9 @@ class BottleController:
         return Pose(position, self._carry_orientation)
 
     def _bottle_clears_rim(self, snapshot: SceneSnapshot) -> bool:
+        return self._bottle_rim_clearance_gap(snapshot) <= 0.0
+
+    def _bottle_rim_clearance_gap(self, snapshot: SceneSnapshot) -> float:
         assert self._active_bottle is not None
         bottle = snapshot.bottles[self._active_bottle]
         bottle_bottom = bbox_bottom(bottle.pose, bottle.bbox, self.config.bottle_fallback_half_height)
@@ -1125,7 +1149,7 @@ class BottleController:
         clearance = self.config.carry_rim_clearance
         if clearance is None:
             clearance = self.config.rim_clearance
-        return bottle_bottom >= dustbin_top + clearance
+        return float(dustbin_top + clearance - bottle_bottom)
 
     def _target_reached(self, snapshot: SceneSnapshot, target: Pose) -> bool:
         assert self._active_arm is not None

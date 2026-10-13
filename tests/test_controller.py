@@ -21,6 +21,9 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.carry_rim_clearance == 0.10
         assert config.place_clearance is None
         assert config.retreat_height == 0.14
+        if name != "world_model_data.json":
+            assert config.max_carry_translation_step == 0.015
+            assert config.lift_hold_steps == 3
 
 
 def test_pose_normalizes_quaternion():
