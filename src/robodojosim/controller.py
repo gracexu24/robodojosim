@@ -853,13 +853,6 @@ class BottleController:
 
             if stage == "transit_lateral":
                 assert self._active_arm is not None
-                if self._bottle_is_inside_bin_xy(
-                    snapshot, self._active_bottle, margin=self.config.transit_entry_margin
-                ):
-                    self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
-                    self._feedback_target = None
-                    self._feedback_stage = "place" if self.config.place_clearance is not None else "drop"
-                    continue
                 if self._feedback_target is None:
                     desired = self._drop_target(snapshot, place=False)
                     position = desired.position.copy()

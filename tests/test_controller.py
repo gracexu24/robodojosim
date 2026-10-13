@@ -732,6 +732,27 @@ def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
     assert env.bottles["bottle0"].in_bin
 
 
+def test_live_pose_feedback_reaches_configured_bin_slot_before_drop():
+    env = MockBottleEnv(seed=0)
+    slot = np.array([0.12, 0.14])
+    controller = BottleController(
+        ControllerConfig(
+            bottle_labels=("bottle0",),
+            bottle_limit=1,
+            live_pose_feedback=True,
+            drop_slot_offsets=(tuple(slot),),
+            workspace_min=(-0.85, -0.55, 0.10),
+            max_actions=350,
+        )
+    )
+    controller.reset(env.snapshot())
+    while controller._feedback_stage != "drop":
+        planned = controller.next_action(env.snapshot())
+        env.step(planned.action)
+
+    np.testing.assert_allclose(controller._place_xy, env.dustbin.pose.position[:2] + slot, atol=0.01)
+
+
 def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
     env = MockBottleEnv(seed=0)
     controller = BottleController(
