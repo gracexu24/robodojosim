@@ -118,12 +118,17 @@ def test_policy_safety_filter_aligns_equivalent_quaternion_signs():
     np.testing.assert_allclose(filtered[3:7], state[3:7])
 
 
-def test_runtime_forces_act_to_replan_each_step():
+def test_runtime_enables_act_temporal_ensemble():
     runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
-    runtime.config = SimpleNamespace(n_action_steps=10)
-    runtime.policy = SimpleNamespace(config=SimpleNamespace(n_action_steps=10), reset_count=0)
-    runtime.policy.reset = lambda: setattr(runtime.policy, "reset_count", runtime.policy.reset_count + 1)
-    runtime._force_replan_each_step()
-    assert runtime.config.n_action_steps == 1
-    assert runtime.policy.config.n_action_steps == 1
-    assert runtime.policy.reset_count == 1
+    runtime.temporal_ensemble_coeff = 0.01
+    config = SimpleNamespace(n_action_steps=10, temporal_ensemble_coeff=None)
+    runtime._configure_policy_execution(config)
+    assert config.n_action_steps == 1
+    assert config.temporal_ensemble_coeff == 0.01
+
+
+def test_runtime_rejects_policy_without_temporal_ensemble_support():
+    runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
+    runtime.temporal_ensemble_coeff = 0.01
+    with pytest.raises(TypeError, match="does not support"):
+        runtime._configure_policy_execution(SimpleNamespace(n_action_steps=10))

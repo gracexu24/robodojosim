@@ -64,6 +64,10 @@ def eval_one_episode(TASK_ENV, model_client):
         },
     )
     print(f"[bottle_lerobot] episode={episode_id} steps={steps} success={success} reason={termination_reason}")
+    # Flush the completed episode's controller diagnostics. The next episode
+    # also resets before its first observation, so this is intentionally safe
+    # and idempotent from the environment's perspective.
+    model_client.call(func_name="reset")
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):

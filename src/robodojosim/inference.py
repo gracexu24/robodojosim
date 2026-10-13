@@ -238,21 +238,37 @@ def action_mapping(action: Any) -> dict[str, np.ndarray]:
 class LeRobotPolicyRuntime:
     """Lazy LeRobot checkpoint loader used by the XPolicyLab policy server."""
 
-    def __init__(self, checkpoint: str | Path, *, device: str = "cuda"):
+    def __init__(
+        self,
+        checkpoint: str | Path,
+        *,
+        device: str = "cuda",
+        temporal_ensemble_coeff: float = 0.01,
+    ):
         self.checkpoint = Path(checkpoint).resolve()
         if not self.checkpoint.is_dir():
             raise FileNotFoundError(f"checkpoint directory does not exist: {self.checkpoint}")
         self.device = device
+        if temporal_ensemble_coeff < 0:
+            raise ValueError("temporal_ensemble_coeff must be non-negative")
+        self.temporal_ensemble_coeff = temporal_ensemble_coeff
         self.torch = _import_torch()
         self.config, self.policy = self._load_policy()
         self.preprocessor, self.postprocessor = self._load_processors()
         self.safety_filter = PolicySafetyFilter()
-        self._force_replan_each_step()
         self.policy.eval()
 
     def reset(self) -> None:
         if self.safety_filter.summary()["steps"]:
-            print(f"[robodojosim.safety] {json.dumps(self.safety_filter.summary(), sort_keys=True)}", flush=True)
+            summary = self.safety_filter.summary()
+            summary.update(
+                {
+                    "policy_execution": "act_temporal_ensemble",
+                    "temporal_ensemble_coeff": self.temporal_ensemble_coeff,
+                    "chunk_size": int(getattr(self.config, "chunk_size", 0)),
+                }
+            )
+            print(f"[robodojosim.safety] {json.dumps(summary, sort_keys=True)}", flush=True)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
         self.safety_filter.reset()
@@ -280,13 +296,12 @@ class LeRobotPolicyRuntime:
         safe_action = self.safety_filter.apply(action, self.observed_state)
         return action_mapping(safe_action)
 
-    def _force_replan_each_step(self) -> None:
-        """Disable LeRobot's open-loop action queue without changing checkpoint weights."""
-        for value in (self.config, getattr(self.policy, "config", None)):
-            if value is not None and hasattr(value, "n_action_steps"):
-                value.n_action_steps = 1
-        if hasattr(self.policy, "reset"):
-            self.policy.reset()
+    def _configure_policy_execution(self, config: Any) -> None:
+        """Query ACT every frame while retaining aligned future actions from older chunks."""
+        if not hasattr(config, "temporal_ensemble_coeff") or not hasattr(config, "n_action_steps"):
+            raise TypeError("checkpoint policy does not support ACT temporal ensembling")
+        config.n_action_steps = 1
+        config.temporal_ensemble_coeff = self.temporal_ensemble_coeff
 
     def _load_policy(self) -> tuple[Any, Any]:
         try:
@@ -297,6 +312,7 @@ class LeRobotPolicyRuntime:
         config = PreTrainedConfig.from_pretrained(self.checkpoint)
         config.device = self.device
         config.pretrained_path = str(self.checkpoint)
+        self._configure_policy_execution(config)
         policy_class = get_policy_class(config.type)
         policy = policy_class.from_pretrained(str(self.checkpoint), config=config)
         return config, policy.to(self.device)
