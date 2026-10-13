@@ -27,9 +27,15 @@ class RoboDojoSceneAdapter:
     simulator objects.
     """
 
-    def __init__(self, task_env: Any, env_idx: int = 0):
+    def __init__(
+        self,
+        task_env: Any,
+        env_idx: int = 0,
+        bottle_labels: tuple[str, ...] | None = None,
+    ):
         self.task_env = task_env
         self.env_idx = env_idx
+        self.bottle_labels = bottle_labels or ("bottle0", "bottle1", "bottle2", "bottle3")
         self._objects: dict[tuple[str, str], Any] = {}
         self._rigid_geometry: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         self._static_geometry: dict[str, ObjectState] = {}
@@ -44,7 +50,7 @@ class RoboDojoSceneAdapter:
             "left": float(_numpy(state.get("left_ee_joint_state", [1.0])).reshape(-1)[0]),
             "right": float(_numpy(state.get("right_ee_joint_state", [1.0])).reshape(-1)[0]),
         }
-        bottles = {label: self._rigid(label) for label in ("bottle0", "bottle1", "bottle2", "bottle3")}
+        bottles = {label: self._rigid(label) for label in self.bottle_labels}
         dustbin = self._geometry("dustbin")
         instruction = observation.get(
             "instruction", "Pick up the bottles and throw them into the dustbin, using handover when needed."

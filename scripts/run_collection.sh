@@ -19,6 +19,10 @@ export ROBODOJOSIM_DATASET_DIR="${OUTPUT_DIR}"
 export ROBODOJOSIM_CONFIG="${ROBODOJOSIM_CONFIG:-${PROJECT_ROOT}/configs/bottle_task.json}"
 export EVAL_NUM="${ROBODOJOSIM_EVAL_NUM:-native}"
 
+if [[ "${ROBODOJOSIM_TWO_BOTTLE_TASK:-1}" == "1" ]]; then
+    bash "${PROJECT_ROOT}/scripts/enable_two_bottle_task.sh" "${ROBODOJO_ROOT}"
+fi
+
 # Asset 22 declares 0.22 kg in metadata, but RoboDojo's generated layouts
 # encode it as 22 kg. Correct only that exact typo, retaining one backup per
 # affected layout, so a normal X5 gripper can manipulate the plastic bottle.
@@ -26,6 +30,9 @@ if [[ "${ROBODOJOSIM_FIX_BOTTLE_MASS:-1}" == "1" ]]; then
     LAYOUT_ARGS=(fix-layouts --robodojo-root "${ROBODOJO_ROOT}")
     if [[ "${ROBODOJOSIM_CENTRALIZE_DUSTBIN:-1}" == "1" ]]; then
         LAYOUT_ARGS+=(--centralize-dustbin)
+    fi
+    if [[ "${ROBODOJOSIM_TWO_BOTTLE_TASK:-1}" == "1" ]]; then
+        LAYOUT_ARGS+=(--two-bottle-brown-yellow)
     fi
     conda run -n "${EVAL_ENV}" robodojosim "${LAYOUT_ARGS[@]}"
 fi

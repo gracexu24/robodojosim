@@ -21,6 +21,8 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.drop_clearance == 0.10
         assert config.rim_clearance == 0.03
         assert config.gripper_hold_steps == 7
+        assert config.bottle_limit == 2
+        assert config.bottle_labels == ["bottle0", "bottle1"]
 
 
 def test_pose_normalizes_quaternion():

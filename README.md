@@ -13,7 +13,7 @@ Ubuntu + NVIDIA machine.
 - Direct per-arm pickups into a shared tabletop training dustbin, plus an experimental configurable handoff path.
 - EE-pose actions in RoboDojo's `[x, y, z, qw, qx, qy, qz]` convention.
 - Normalized gripper control (`1.0` open, `0.0` closed).
-- Simulator-only scene extraction for the four bottle poses and dustbin pose.
+- Simulator-only scene extraction for the configured bottle poses and dustbin pose.
 - Streaming HDF5 recording in XPolicyLab trajectory format.
 - Atomic episode completion, a manifest, validation, and resume-by-episode ID.
 - Quota-driven campaigns for exactly 50 successful policy episodes or at least six complete interaction hours.
@@ -25,7 +25,8 @@ Ubuntu + NVIDIA machine.
 - An idempotent correction for RoboDojo bottle asset 22's generated-layout mass typo (`22 kg` versus its
   metadata value of `0.22 kg`), with original JSON backups.
 - An explicit, reversible training-layout transform that turns the far-left floor bin into a 19.5 cm-tall tabletop
-  receptacle at `[x=0, y=-0.10]`, aligns side-lying bottles, and reserves four non-colliding drop slots.
+  receptacle at `[x=0, y=-0.10]`. The default task contains only category 0 (brown Coca-Cola) and category 25
+  (pale-yellow tea), one per arm; their left/right order alternates by layout ID.
 - Reproducible ACT and Diffusion Policy training wrappers with dataset preflight checks and resumable run manifests.
 - A learned-policy XPolicyLab adapter with Cartesian action safety checks, Isaac Sim metrics, and Markdown reports.
 - Private-by-default Hugging Face dataset/model publishing without storing credentials or large artifacts in Git.
@@ -59,7 +60,7 @@ reachability-aware motion. The calibrated simple-task sequence is:
 find -> pregrasp -> grasp -> verify/lift -> retract -> lateral bin entry -> release -> validate -> home
 ```
 
-The bottle task grants full success only after all four bottles are in the bin, both grippers are open, and both
+The two-bottle task grants full success only after both bottles are in the bin, both grippers are open, and both
 arms return within its home tolerance. The controller explicitly handles all three conditions.
 
 ## Develop and test now (no simulator required)
@@ -112,14 +113,16 @@ XPolicyLab/policy/bottle_scripted/eval.sh \
   RoboDojo put_bottles_into_dustbin scripted arx_x5 ee 0 0 0 RoboDojo RoboDojo
 ```
 
-Before launch, the wrapper corrects only bottle category 22 layouts whose mass is exactly `22` and converts only
-this task's public floor bin into a 19.5 cm-tall, 51.7 by 61.1 cm receptacle at the measured shared reachable point
-and places the side-lying bottles in collision-free calibrated lanes. The original JSON is retained as
+Before launch, the wrapper installs the reversible two-bottle reward overlay, corrects only bottle category 22
+layouts whose mass is exactly `22`, converts this task's public floor bin into a 19.5 cm-tall, 51.7 by 61.1 cm
+receptacle at the measured shared reachable point, and replaces every layout with the brown and yellow bottles in
+alternating left/right order. Original task/layout files are retained as backups, and layout JSON is retained as
 `*.robodojosim-original`. This tabletop-bin variant is intentional training-environment design: the measured
 top-down workspaces have a central gap, so the public far-left bin requires an unreliable cross-arm handoff, while a
 full-size bin at the center intersects the table. Set
 `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` to preserve the public layout, or `ROBODOJOSIM_FIX_BOTTLE_MASS=0` to reproduce the
-uncorrected mass bug.
+uncorrected mass bug. Set `ROBODOJOSIM_TWO_BOTTLE_TASK=0` only when deliberately restoring the legacy four-bottle
+controller workflow.
 
 Episode IDs come from RoboDojo's deterministic layout IDs. Omit `ROBODOJOSIM_EVAL_NUM=1` to process the task's full
 official layout set. Existing successful HDF5 files are never overwritten; failed layouts are retried. See

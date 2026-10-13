@@ -135,7 +135,12 @@ def _campaign(args: argparse.Namespace) -> int:
 def _fix_layouts(args: argparse.Namespace) -> int:
     changed = normalize_bottle_mass(args.robodojo_root, dry_run=args.dry_run)
     dustbins = (
-        centralize_dustbin(args.robodojo_root, target_x=args.dustbin_x, dry_run=args.dry_run)
+        centralize_dustbin(
+            args.robodojo_root,
+            target_x=args.dustbin_x,
+            two_bottle_brown_yellow=args.two_bottle_brown_yellow,
+            dry_run=args.dry_run,
+        )
         if args.centralize_dustbin
         else []
     )
@@ -144,6 +149,7 @@ def _fix_layouts(args: argparse.Namespace) -> int:
             {
                 "mass_layouts": len(changed),
                 "training_dustbin_layouts": len(dustbins),
+                "two_bottle_brown_yellow": args.two_bottle_brown_yellow,
                 "dry_run": args.dry_run,
             },
             indent=2,
@@ -326,6 +332,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="install the shared tabletop training-bin variant (legacy flag name)",
     )
     layouts.add_argument("--dustbin-x", type=float, default=0.0)
+    layouts.add_argument(
+        "--two-bottle-brown-yellow",
+        action="store_true",
+        help="replace every bottle layout with brown/yellow bottles in alternating left/right order",
+    )
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)
     lerobot = subparsers.add_parser("export-lerobot", help="convert complete episodes to LeRobotDataset v3.0")

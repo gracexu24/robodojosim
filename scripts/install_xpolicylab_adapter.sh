@@ -24,6 +24,10 @@ for policy_name in bottle_scripted bottle_lerobot; do
     echo "Installed adapter at ${DESTINATION}"
 done
 
+if [[ "${ROBODOJOSIM_TWO_BOTTLE_TASK:-1}" == "1" ]]; then
+    bash "${PROJECT_ROOT}/scripts/enable_two_bottle_task.sh" "$(cd "${XPL_ROOT}/.." && pwd)"
+fi
+
 if [[ $# -ge 2 ]]; then
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda run -n "$2" python -m pip install -e "${PROJECT_ROOT}"

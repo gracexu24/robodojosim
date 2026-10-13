@@ -191,6 +191,47 @@ def test_training_layout_uses_only_stable_graspable_plastic_bottles(tmp_path):
     assert all(item["rotate_rand"] is False for item in updated)
 
 
+def test_two_bottle_variant_keeps_only_brown_cola_and_yellow_bottle(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    for layout_index in (0, 1):
+        path = layout_dir / f"put_bottles_into_dustbin_{layout_index}.json"
+        bottles = [
+            {
+                "category": "bottle",
+                "category_idx": index,
+                "label": f"bottle{slot}",
+                "default_pos": [0.0, 0.0, 0.8],
+                "physics": {"mass": 0.2},
+            }
+            for slot, index in enumerate((0, 2, 25, 55))
+        ]
+        path.write_text(
+            json.dumps(
+                {
+                    "Rigid": {"bottle": bottles},
+                    "Geometry": {"dustbin": [{"category_idx": 0, "label": "dustbin"}]},
+                    "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    configure_training_dustbin(tmp_path, two_bottle_brown_yellow=True)
+
+    even = json.loads((layout_dir / "put_bottles_into_dustbin_0.json").read_text())["Rigid"]["bottle"]
+    odd = json.loads((layout_dir / "put_bottles_into_dustbin_1.json").read_text())["Rigid"]["bottle"]
+    assert len(even) == len(odd) == 2
+    assert [item["category_idx"] for item in even] == [0, 25]
+    assert [item["category_idx"] for item in odd] == [25, 0]
+    assert [item["label"] for item in even] == ["bottle0", "bottle1"]
+    assert [item["default_pos"][:2] for item in even] == [[-0.35, -0.26], [0.38, -0.26]]
+    assert [item["default_pos"][:2] for item in odd] == [[-0.35, -0.26], [0.38, -0.26]]
+    assert [item["physics"]["mass"] for item in even] == [0.19, 0.15]
+    assert [item["physics"]["mass"] for item in odd] == [0.15, 0.19]
+    assert configure_training_dustbin(tmp_path, two_bottle_brown_yellow=True) == []
+
+
 def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
     layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
     layout_dir.mkdir(parents=True)

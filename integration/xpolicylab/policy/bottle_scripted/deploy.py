@@ -25,10 +25,11 @@ def eval_one_episode(TASK_ENV, model_client):
 
     model_client.call(func_name="reset")
     observation = TASK_ENV.get_obs()
-    adapter = RoboDojoSceneAdapter(TASK_ENV)
+    config = _config()
+    adapter = RoboDojoSceneAdapter(TASK_ENV, bottle_labels=config.bottle_labels)
     snapshot = adapter.snapshot(observation)
     trajectory_variant = int(os.environ.get("ROBODOJOSIM_TRAJECTORY_VARIANT", "0"))
-    controller = BottleController(_config(), trajectory_variant=trajectory_variant)
+    controller = BottleController(config, trajectory_variant=trajectory_variant)
     controller.reset(snapshot)
 
     output_dir = Path(os.environ.get("ROBODOJOSIM_DATASET_DIR", "datasets/put_bottles_into_dustbin"))

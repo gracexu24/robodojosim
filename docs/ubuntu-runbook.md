@@ -18,7 +18,9 @@ Keep the repositories in this shape:
 
 Complete the official RoboDojo asset/config validation before adding this controller. A missing robot, bottle,
 dustbin, or layout asset cannot be diagnosed from the controller layer. Production collection uses the explicit
-tabletop-dustbin training variant; set `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` only when reproducing the public layout.
+tabletop-dustbin two-bottle variant: brown Coca-Cola and pale-yellow tea, one on each side with order alternating by
+layout. Set `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` only when reproducing the public bin placement, and
+`ROBODOJOSIM_TWO_BOTTLE_TASK=0` only when deliberately restoring the legacy four-bottle workflow.
 
 ## 2. Install the adapter
 
@@ -28,8 +30,8 @@ bash scripts/install_xpolicylab_adapter.sh \
   /workspace/RoboDojo/XPolicyLab RoboDojo RoboDojo
 ```
 
-The installer refuses to overwrite an existing `policy/bottle_scripted` directory. Remove or rename an old copy
-deliberately before reinstalling.
+The installer updates the two XPolicyLab adapters and installs a reversible two-bottle reward overlay. The original
+RoboDojo task module is retained as `put_bottles_into_dustbin.py.robodojosim-four-bottle-original`.
 
 ## 3. Smoke test one seed
 

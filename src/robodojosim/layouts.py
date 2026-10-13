@@ -40,6 +40,12 @@ _TRAINING_PLASTIC_BOTTLES = (
     ),
 )
 
+# User-facing identities for the two-bottle task variant. RoboDojo's asset
+# descriptions identify category 0 as the dark-brown Coca-Cola bottle and
+# category 25 as the pale-yellow Dongfang Shuye drink bottle.
+_BROWN_COLA_BOTTLE = _TRAINING_PLASTIC_BOTTLES[0]
+_YELLOW_TEA_BOTTLE = _TRAINING_PLASTIC_BOTTLES[2]
+
 
 def _layout_candidates(root: Path) -> dict[Path, Path]:
     layout_roots = (
@@ -105,6 +111,7 @@ def configure_training_dustbin(
     width_scale: float = 1.1,
     depth_scale: float = 1.3,
     height_scale: float = 0.30,
+    two_bottle_brown_yellow: bool = False,
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
@@ -123,7 +130,9 @@ def configure_training_dustbin(
     bottle's complete 3D bounding box to fit inside the dustbin bounding box.
     All selected bottles are 6--8 cm tall in their stable side poses, so the
     19.5 cm tabletop bin contains tilted landings while staying below both arms'
-    measured carry workspace.
+    measured carry workspace. When ``two_bottle_brown_yellow`` is enabled,
+    only the brown Coca-Cola bottle and pale-yellow tea bottle are present.
+    Their left/right order alternates deterministically with layout index.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.
@@ -166,29 +175,48 @@ def configure_training_dustbin(
         if backup.exists():
             with backup.open(encoding="utf-8") as handle:
                 source_bottles = json.load(handle).get("Rigid", {}).get("bottle", bottles)
-        source_slots = (
-            (-0.35, -0.26),
-            (-0.35, 0.01),
-            (0.38, 0.01),
-            (0.38, -0.26),
-        )
         try:
             layout_index = int(resolved.stem.rsplit("_", 1)[1])
         except (IndexError, ValueError):
             layout_index = 0
-        for index, bottle in enumerate(bottles):
+
+        if two_bottle_brown_yellow:
+            if not source_bottles:
+                continue
+            templates = [deepcopy(source_bottles[index % len(source_bottles)]) for index in range(2)]
+            assets = (
+                (_BROWN_COLA_BOTTLE, _YELLOW_TEA_BOTTLE)
+                if layout_index % 2 == 0
+                else (_YELLOW_TEA_BOTTLE, _BROWN_COLA_BOTTLE)
+            )
+            source_slots = ((-0.35, -0.26), (0.38, -0.26))
+            bottles = templates
+            data.setdefault("Rigid", {})["bottle"] = bottles
+        else:
+            assets = tuple(
+                _TRAINING_PLASTIC_BOTTLES[(layout_index + index) % len(_TRAINING_PLASTIC_BOTTLES)]
+                for index in range(len(bottles))
+            )
+            source_slots = (
+                (-0.35, -0.26),
+                (-0.35, 0.01),
+                (0.38, 0.01),
+                (0.38, -0.26),
+            )
+
+        for index, (bottle, asset) in enumerate(zip(bottles, assets, strict=True)):
             source = source_bottles[index] if index < len(source_bottles) else bottle
             position = list(source.get("default_pos", bottle.get("default_pos", [])))
             if not isinstance(position, list) or len(position) < 3:
                 continue
             slot_x, slot_y = source_slots[index % len(source_slots)]
-            category_idx, center_height, bottle_mass, stable_orientation = _TRAINING_PLASTIC_BOTTLES[
-                (layout_index + index) % len(_TRAINING_PLASTIC_BOTTLES)
-            ]
+            category_idx, center_height, bottle_mass, stable_orientation = asset
             position[0] = slot_x
             position[1] = slot_y
             position[2] = round(table_top + center_height, 6)
+            bottle["category"] = "bottle"
             bottle["category_idx"] = category_idx
+            bottle["label"] = f"bottle{index}"
             bottle["default_pos"] = position
             bottle["default_ori"] = list(stable_orientation)
             bottle["qpos"] = [1.0, 0.0, 0.0, 0.0]
@@ -205,7 +233,18 @@ def configure_training_dustbin(
     return changed
 
 
-def centralize_dustbin(robodojo_root: str | Path, *, target_x: float = 0.0, dry_run: bool = False) -> list[Path]:
+def centralize_dustbin(
+    robodojo_root: str | Path,
+    *,
+    target_x: float = 0.0,
+    two_bottle_brown_yellow: bool = False,
+    dry_run: bool = False,
+) -> list[Path]:
     """Backward-compatible name for the tabletop training-bin transform."""
 
-    return configure_training_dustbin(robodojo_root, target_x=target_x, dry_run=dry_run)
+    return configure_training_dustbin(
+        robodojo_root,
+        target_x=target_x,
+        two_bottle_brown_yellow=two_bottle_brown_yellow,
+        dry_run=dry_run,
+    )

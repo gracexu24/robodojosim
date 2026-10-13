@@ -86,3 +86,12 @@ def test_scene_adapter_caches_object_lookup_mesh_bounds_and_static_geometry():
         second.bottles["bottle0"].pose.position,
         first.bottles["bottle0"].pose.position + [0.1, 0.0, 0.0],
     )
+
+
+def test_scene_adapter_supports_two_bottle_layouts():
+    mock = MockBottleEnv(5)
+    task_env = FakeTaskEnv(mock)
+    snapshot = RoboDojoSceneAdapter(task_env, bottle_labels=("bottle0", "bottle1")).snapshot(mock.observation())
+    assert set(snapshot.bottles) == {"bottle0", "bottle1"}
+    requested_names = [request[1] for request in task_env.scene_manager.requests]
+    assert requested_names == ["bottle0_instance", "bottle1_instance", "dustbin_instance"]
