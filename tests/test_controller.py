@@ -19,6 +19,8 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.grasp_max_center_offset == 0.09
         assert config.lift_height == 0.28
         assert config.carry_rim_clearance == 0.10
+        assert config.place_clearance == 0.025
+        assert config.retreat_height == 0.14
 
 
 def test_pose_normalizes_quaternion():
