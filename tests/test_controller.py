@@ -22,6 +22,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.place_clearance is None
         assert config.retreat_height == 0.14
         assert config.release_settle_steps == 10
+        assert config.drop_slot_offsets == [[-0.15, -0.08], [-0.05, -0.08], [0.05, -0.08], [0.15, -0.08]]
         if name != "world_model_data.json":
             assert config.max_carry_translation_step == 0.015
             assert config.lift_hold_steps == 3
