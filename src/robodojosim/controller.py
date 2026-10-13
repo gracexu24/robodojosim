@@ -722,7 +722,10 @@ class BottleController:
                     self._feedback_stage = "lift"
                     continue
                 return self._feedback_move_action(
-                    snapshot, self._feedback_target, Phase.LIFT, self.config.max_lift_translation_step
+                    snapshot,
+                    self._feedback_target,
+                    Phase.LIFT,
+                    min(self.config.max_lift_translation_step, self._carry_step()),
                 )
 
             if stage == "lift_settle":
