@@ -866,6 +866,13 @@ class BottleController:
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
                 if reached:
+                    if self._bottle_is_inside_bin_xy(
+                        snapshot, self._active_bottle, margin=self.config.transit_entry_margin
+                    ):
+                        self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                        self._feedback_target = None
+                        self._feedback_stage = "place" if self.config.place_clearance is not None else "drop"
+                        continue
                     self._feedback_target = None
                     self._feedback_stage = "transit"
                     continue

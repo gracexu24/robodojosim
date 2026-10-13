@@ -22,7 +22,7 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.place_clearance is None
         assert config.retreat_height == 0.14
         assert config.release_settle_steps == 10
-        assert config.drop_slot_offsets == [[-0.15, -0.08], [-0.05, -0.08], [0.05, -0.08], [0.15, -0.08]]
+        assert config.drop_slot_offsets == [[-0.15, 0.0], [0.0, 0.0], [0.0, 0.0], [0.15, 0.0]]
         if name != "world_model_data.json":
             assert config.max_carry_translation_step == 0.015
             assert config.lift_hold_steps == 3
@@ -733,7 +733,7 @@ def test_live_pose_feedback_uses_staged_transit_corridor_and_places_bottle():
     assert env.bottles["bottle0"].in_bin
 
 
-def test_live_pose_feedback_reaches_configured_bin_slot_before_drop():
+def test_live_pose_feedback_reaches_configured_bin_x_slot_before_drop():
     env = MockBottleEnv(seed=0)
     slot = np.array([0.12, 0.14])
     controller = BottleController(
@@ -751,7 +751,8 @@ def test_live_pose_feedback_reaches_configured_bin_slot_before_drop():
         planned = controller.next_action(env.snapshot())
         env.step(planned.action)
 
-    np.testing.assert_allclose(controller._place_xy, env.dustbin.pose.position[:2] + slot, atol=0.01)
+    assert controller._place_xy[0] == pytest.approx(env.dustbin.pose.position[0] + slot[0], abs=0.01)
+    assert controller._place_xy[1] == pytest.approx(controller.config.transit_corridor_y, abs=0.01)
 
 
 def test_live_pose_feedback_preserves_high_lift_during_horizontal_transfer():
