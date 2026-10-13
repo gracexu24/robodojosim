@@ -878,12 +878,13 @@ class BottleController:
                 assert self._feedback_target is not None
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
-                if reached or (stalled and self._bottle_is_inside_bin(snapshot, self._active_bottle)):
+                # The bottle has already been released at this point.  A stalled
+                # vertical retreat should not trigger a destructive re-grasp:
+                # continue the home motion and let the task's final state check
+                # decide whether the placement succeeded.
+                if reached or stalled:
                     self._feedback_target = None
                     self._feedback_stage = "home_raise"
-                    continue
-                if stalled:
-                    self._begin_recovery(snapshot, "post-release retreat stalled before the bottle settled in the bin")
                     continue
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
