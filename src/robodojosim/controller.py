@@ -865,23 +865,28 @@ class BottleController:
                     self._feedback_target = Pose(position, desired.quaternion)
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
-                if reached:
-                    if self._bottle_is_inside_bin_xy(
-                        snapshot, self._active_bottle, margin=self.config.transit_entry_margin
-                    ):
-                        self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                inside = self._bottle_is_inside_bin_xy(
+                    snapshot,
+                    self._active_bottle,
+                    margin=self.config.transit_entry_margin if reached else None,
+                )
+                if (reached or stalled) and inside:
+                    current_xy = snapshot.arms[self._active_arm].position[:2].copy()
+                    desired_y = self._drop_target(snapshot, place=False).position[1]
+                    self._place_xy = np.array([current_xy[0], desired_y], dtype=np.float64)
+                    self._feedback_target = None
+                    if abs(current_xy[1] - desired_y) <= self.config.target_position_tolerance:
+                        self._place_xy = current_xy
                         self._feedback_target = None
                         self._feedback_stage = "place" if self.config.place_clearance is not None else "drop"
-                        continue
+                    else:
+                        self._feedback_stage = "transit"
+                    continue
+                if reached:
                     self._feedback_target = None
                     self._feedback_stage = "transit"
                     continue
                 if stalled:
-                    if self._bottle_is_inside_bin_xy(snapshot, self._active_bottle):
-                        self._place_xy = snapshot.arms[self._active_arm].position[:2].copy()
-                        self._feedback_target = None
-                        self._feedback_stage = "place" if self.config.place_clearance is not None else "drop"
-                        continue
                     self._begin_recovery(snapshot, "lateral transit stalled before the bottle entered the bin")
                     continue
                 return self._feedback_move_action(snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step())
@@ -891,6 +896,8 @@ class BottleController:
                 if self._feedback_target is None:
                     desired = self._drop_target(snapshot, place=False)
                     position = desired.position.copy()
+                    if self._place_xy is not None:
+                        position[:2] = self._place_xy
                     position[2] = max(
                         position[2],
                         snapshot.arms[self._active_arm].position[2],
