@@ -11,6 +11,7 @@ OUTPUT=$3
 EPISODES=${4:-10}
 POLICY_GPU=${5:-0}
 ENV_GPU=${6:-0}
+POLICY_ENV=${ROBODOJOSIM_POLICY_ENV:-RoboDojoLeRobotTrain}
 
 conda run -n RoboDojo robodojosim evaluate-policy \
     --xpolicylab "${XPOLICYLAB}" \
@@ -18,4 +19,5 @@ conda run -n RoboDojo robodojosim evaluate-policy \
     --output "${OUTPUT}" \
     --episodes "${EPISODES}" \
     --policy-gpu "${POLICY_GPU}" \
-    --env-gpu "${ENV_GPU}"
+    --env-gpu "${ENV_GPU}" \
+    --policy-env "${POLICY_ENV}"
