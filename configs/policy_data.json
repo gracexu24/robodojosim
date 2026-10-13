@@ -19,7 +19,7 @@
   "drop_clearance": 0.10,
   "place_clearance": null,
   "rim_clearance": 0.03,
-  "carry_rim_clearance": 0.10,
+  "carry_rim_clearance": 0.06,
   "dustbin_fallback_half_height": 0.0975,
   "retreat_height": 0.14,
   "direct_left_max_x": 0.08,
