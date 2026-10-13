@@ -842,7 +842,7 @@ class BottleController:
                     self._feedback_target = self._drop_target(snapshot, place=True)
                 reached = self._target_reached(snapshot, self._feedback_target)
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
-                if reached or (stalled and self._bottle_is_inside_bin(snapshot, self._active_bottle)):
+                if reached or (stalled and self._bottle_is_inside_bin_xy(snapshot, self._active_bottle)):
                     self._feedback_target = None
                     self._feedback_repeat = 0
                     self._feedback_stage = "drop_hold"
