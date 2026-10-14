@@ -263,11 +263,17 @@ class LeRobotPolicyRuntime:
             summary = self.safety_filter.summary()
             summary.update(
                 {
-                    "policy_execution": "act_temporal_ensemble",
-                    "temporal_ensemble_coeff": self.temporal_ensemble_coeff,
-                    "chunk_size": int(getattr(self.config, "chunk_size", 0)),
+                    "policy_execution": self._policy_execution,
+                    "n_action_steps": int(getattr(self.config, "n_action_steps", 0)),
                 }
             )
+            if self._policy_execution == "act_temporal_ensemble":
+                summary.update(
+                    {
+                        "temporal_ensemble_coeff": self.temporal_ensemble_coeff,
+                        "chunk_size": int(getattr(self.config, "chunk_size", 0)),
+                    }
+                )
             print(f"[robodojosim.safety] {json.dumps(summary, sort_keys=True)}", flush=True)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
@@ -297,11 +303,28 @@ class LeRobotPolicyRuntime:
         return action_mapping(safe_action)
 
     def _configure_policy_execution(self, config: Any) -> None:
-        """Query ACT every frame while retaining aligned future actions from older chunks."""
-        if not hasattr(config, "temporal_ensemble_coeff") or not hasattr(config, "n_action_steps"):
-            raise TypeError("checkpoint policy does not support ACT temporal ensembling")
-        config.n_action_steps = 1
-        config.temporal_ensemble_coeff = self.temporal_ensemble_coeff
+        """Configure policy-specific closed-loop execution semantics.
+
+        ACT is queried every frame and temporally ensembles aligned chunks.
+        Diffusion Policy retains the action queue encoded in its checkpoint;
+        it has no ACT temporal-ensemble field and must not be configured as if
+        it did.
+        """
+
+        policy_type = str(getattr(config, "type", "")).lower()
+        if policy_type == "act":
+            if not hasattr(config, "temporal_ensemble_coeff") or not hasattr(config, "n_action_steps"):
+                raise TypeError("ACT checkpoint does not support temporal ensembling")
+            config.n_action_steps = 1
+            config.temporal_ensemble_coeff = self.temporal_ensemble_coeff
+            self._policy_execution = "act_temporal_ensemble"
+            return
+        if policy_type == "diffusion":
+            if not hasattr(config, "n_action_steps"):
+                raise TypeError("Diffusion Policy checkpoint does not define n_action_steps")
+            self._policy_execution = "diffusion_action_queue"
+            return
+        raise TypeError(f"unsupported checkpoint policy type: {policy_type or 'missing'}")
 
     def _load_policy(self) -> tuple[Any, Any]:
         try:

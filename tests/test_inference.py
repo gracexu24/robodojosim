@@ -121,14 +121,31 @@ def test_policy_safety_filter_aligns_equivalent_quaternion_signs():
 def test_runtime_enables_act_temporal_ensemble():
     runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
     runtime.temporal_ensemble_coeff = 0.01
-    config = SimpleNamespace(n_action_steps=10, temporal_ensemble_coeff=None)
+    config = SimpleNamespace(type="act", n_action_steps=10, temporal_ensemble_coeff=None)
     runtime._configure_policy_execution(config)
     assert config.n_action_steps == 1
     assert config.temporal_ensemble_coeff == 0.01
+    assert runtime._policy_execution == "act_temporal_ensemble"
 
 
-def test_runtime_rejects_policy_without_temporal_ensemble_support():
+def test_runtime_preserves_diffusion_action_queue():
     runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
     runtime.temporal_ensemble_coeff = 0.01
-    with pytest.raises(TypeError, match="does not support"):
-        runtime._configure_policy_execution(SimpleNamespace(n_action_steps=10))
+    config = SimpleNamespace(type="diffusion", n_action_steps=8)
+    runtime._configure_policy_execution(config)
+    assert config.n_action_steps == 8
+    assert runtime._policy_execution == "diffusion_action_queue"
+
+
+def test_runtime_rejects_act_without_temporal_ensemble_support():
+    runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
+    runtime.temporal_ensemble_coeff = 0.01
+    with pytest.raises(TypeError, match="does not support temporal ensembling"):
+        runtime._configure_policy_execution(SimpleNamespace(type="act", n_action_steps=10))
+
+
+def test_runtime_rejects_unknown_policy_type():
+    runtime = LeRobotPolicyRuntime.__new__(LeRobotPolicyRuntime)
+    runtime.temporal_ensemble_coeff = 0.01
+    with pytest.raises(TypeError, match="unsupported checkpoint policy type"):
+        runtime._configure_policy_execution(SimpleNamespace(type="other", n_action_steps=1))
