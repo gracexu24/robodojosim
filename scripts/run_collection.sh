@@ -21,6 +21,9 @@ export EVAL_NUM="${ROBODOJOSIM_EVAL_NUM:-native}"
 
 if [[ "${ROBODOJOSIM_TWO_BOTTLE_TASK:-1}" == "1" ]]; then
     bash "${PROJECT_ROOT}/scripts/enable_two_bottle_task.sh" "${ROBODOJO_ROOT}"
+else
+    echo "[DEPRECATED] ROBODOJOSIM_TWO_BOTTLE_TASK=0 restores the unsupported four-bottle/handoff workflow." >&2
+    echo "[DEPRECATED] Use the default brown/yellow two-bottle task for new collection and training." >&2
 fi
 
 # Asset 22 declares 0.22 kg in metadata, but RoboDojo's generated layouts

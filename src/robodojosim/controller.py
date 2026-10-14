@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -61,7 +62,10 @@ class ControllerConfig:
     bottle_fallback_half_height: float = 0.045
     dustbin_fallback_half_height: float = 0.25
     direct_left_max_x: float = 0.08
-    direct_right_drop: bool = False
+    # Direct per-arm placement is the supported two-bottle controller. The
+    # cross-arm handoff path remains only for reproducing older four-bottle
+    # experiments and is deprecated.
+    direct_right_drop: bool = True
     open_value: float = 1.0
     closed_value: float = 0.0
     gripper_hold_steps: int = 3
@@ -255,6 +259,13 @@ class BottleController:
 
     def __init__(self, config: ControllerConfig | None = None, *, trajectory_variant: int = 0):
         self.config = config or ControllerConfig()
+        if not self.config.direct_right_drop:
+            warnings.warn(
+                "The cross-arm handoff controller is deprecated; use direct_right_drop=true "
+                "with the supported brown/yellow two-bottle layout.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self.trajectory_variant = int(trajectory_variant)
         self._steps: list[PlannedAction] = []
         self._cursor = 0

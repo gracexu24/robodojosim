@@ -32,7 +32,8 @@ def test_pose_normalizes_quaternion():
 
 def test_controller_completes_mock_task_with_handover():
     env = MockBottleEnv(seed=7)
-    controller = BottleController()
+    with pytest.warns(DeprecationWarning, match="handoff controller is deprecated"):
+        controller = BottleController(ControllerConfig(direct_right_drop=False))
     controller.reset(env.snapshot())
     phases = []
     previous = dict(env.arms)
@@ -52,6 +53,18 @@ def test_controller_completes_mock_task_with_handover():
         env.step(planned.action)
     assert Phase.HANDOVER in phases
     assert env.success
+
+
+def test_direct_drop_is_the_supported_controller_default():
+    assert ControllerConfig().direct_right_drop is True
+
+
+def test_deprecated_handoff_config_remains_explicitly_reproducible():
+    config_path = Path(__file__).parents[1] / "configs" / "bottle_handoff_calibration.json"
+    config = ControllerConfig.from_json(config_path)
+    assert config.direct_right_drop is False
+    with pytest.warns(DeprecationWarning, match="handoff controller is deprecated"):
+        BottleController(config)
 
 
 def test_trajectory_variants_are_deterministic_and_change_the_plan():

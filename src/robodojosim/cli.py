@@ -329,13 +329,13 @@ def build_parser() -> argparse.ArgumentParser:
     layouts.add_argument(
         "--centralize-dustbin",
         action="store_true",
-        help="install the shared tabletop training-bin variant (legacy flag name)",
+        help="install the shared tabletop training-bin variant",
     )
     layouts.add_argument("--dustbin-x", type=float, default=0.0)
     layouts.add_argument(
         "--two-bottle-brown-yellow",
         action="store_true",
-        help="replace every bottle layout with brown/yellow bottles in alternating left/right order",
+        help="install the supported brown/yellow two-bottle layouts in alternating left/right order",
     )
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)

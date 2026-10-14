@@ -20,7 +20,8 @@ Complete the official RoboDojo asset/config validation before adding this contro
 dustbin, or layout asset cannot be diagnosed from the controller layer. Production collection uses the explicit
 tabletop-dustbin two-bottle variant: brown Coca-Cola and pale-yellow tea, one on each side with order alternating by
 layout. Set `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` only when reproducing the public bin placement, and
-`ROBODOJOSIM_TWO_BOTTLE_TASK=0` only when deliberately restoring the legacy four-bottle workflow.
+`ROBODOJOSIM_TWO_BOTTLE_TASK=0` only for historical reproduction of the deprecated four-bottle/cross-arm-handoff
+workflow. New collection, training, and evaluation should use the default two-bottle task.
 
 ## 2. Install the adapter
 
@@ -133,7 +134,7 @@ Before training:
 
 - Validate every HDF5 file with `robodojosim validate /path/to/dataset`.
 - For policy training, filter manifest entries to `success=true`; for the world model, retain every structurally valid
-  complete episode, including intentional push/exploration episodes that do not earn the four-bottle task reward.
+  complete episode, including intentional push/exploration episodes that do not earn the two-bottle task reward.
 - Check action/state lengths match and no values are NaN/Inf.
 - Review videos or sampled RGB sequences for left/right grasp and tabletop-bin drop quality.
 - Split by seed, not by individual frames.

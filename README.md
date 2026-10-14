@@ -121,8 +121,8 @@ alternating left/right order. Original task/layout files are retained as backups
 top-down workspaces have a central gap, so the public far-left bin requires an unreliable cross-arm handoff, while a
 full-size bin at the center intersects the table. Set
 `ROBODOJOSIM_CENTRALIZE_DUSTBIN=0` to preserve the public layout, or `ROBODOJOSIM_FIX_BOTTLE_MASS=0` to reproduce the
-uncorrected mass bug. Set `ROBODOJOSIM_TWO_BOTTLE_TASK=0` only when deliberately restoring the legacy four-bottle
-controller workflow.
+uncorrected mass bug. `ROBODOJOSIM_TWO_BOTTLE_TASK=0` restores the deprecated four-bottle/cross-arm-handoff
+workflow for historical reproduction only. It is unsupported for new datasets and prints a deprecation warning.
 
 Episode IDs come from RoboDojo's deterministic layout IDs. Omit `ROBODOJOSIM_EVAL_NUM=1` to process the task's full
 official layout set. Existing successful HDF5 files are never overwritten; failed layouts are retried. See
@@ -195,7 +195,8 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-world-6h
 ```
 
-Campaigns are resumable. The policy profile remains the simple four-bottle task and stops at 50 successful episodes.
+Campaigns are resumable. The policy profile uses the supported brown/yellow two-bottle task and stops at 50
+successful episodes, where success requires both bottles in the bin.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
 hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle in most episodes, holds
 another aloft for a variable interval, carries it through two to five safe waypoints, and sometimes sets it down and
