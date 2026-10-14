@@ -32,6 +32,7 @@
   "home_completion_height_offset": 0.10,
   "intermediate_home_completion_height_offset": 0.0,
   "home_between_bottles": true,
+  "home_acceptance_orientation_degrees": 179.0,
   "max_actions": 700,
   "bottle_limit": 2,
   "bottle_labels": ["bottle0", "bottle1"],
