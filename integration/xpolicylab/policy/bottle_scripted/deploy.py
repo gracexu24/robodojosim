@@ -60,6 +60,7 @@ def eval_one_episode(TASK_ENV, model_client):
                 "layout_seed": layout_seed,
                 "trajectory_variant": trajectory_variant,
                 "collection_profile": collection_profile,
+                "scene_variant": "two_bottle_brown_yellow",
                 "campaign_id": os.environ.get("ROBODOJOSIM_CAMPAIGN_ID", "manual"),
             },
             jpeg_quality=int(jpeg_quality) if jpeg_quality else None,

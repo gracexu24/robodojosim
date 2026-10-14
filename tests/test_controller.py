@@ -11,7 +11,7 @@ from robodojosim.types import ObjectState, Pose
 
 def test_production_profiles_use_physically_calibrated_left_grasp_center():
     config_root = Path(__file__).parents[1] / "configs"
-    for name in ("bottle_task.json", "policy_data.json", "world_model_data.json"):
+    for name in ("bottle_task.json", "policy_data.json", "world_model_data.json", "world_model_showcase.json"):
         config = ControllerConfig.from_json(config_root / name)
         assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
@@ -23,6 +23,16 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.gripper_hold_steps == 7
         assert config.bottle_limit == 2
         assert config.bottle_labels == ["bottle0", "bottle1"]
+
+
+def test_showcase_profile_extends_world_model_and_forces_every_skill():
+    config_root = Path(__file__).parents[1] / "configs"
+    config = ControllerConfig.from_json(config_root / "world_model_showcase.json")
+    assert config.world_model_movements is True
+    assert config.live_pose_feedback is True
+    assert config.push_probability == 1.0
+    assert config.regrasp_probability == 1.0
+    assert config.rim_hit_probability == 1.0
 
 
 def test_pose_normalizes_quaternion():
@@ -727,6 +737,7 @@ def test_live_world_model_feedback_executes_randomized_skill_library():
             world_model_movements=True,
             push_probability=1.0,
             regrasp_probability=1.0,
+            rim_hit_probability=1.0,
             bottle_limit=2,
             direct_right_drop=True,
             live_pose_feedback=True,
@@ -739,7 +750,7 @@ def test_live_world_model_feedback_executes_randomized_skill_library():
             place_clearance=0.015,
             workspace_min=(-0.85, -0.55, 0.10),
             home_completion_height_offset=0.0,
-            max_actions=500,
+            max_actions=700,
         ),
         trajectory_variant=0,
     )
@@ -755,8 +766,15 @@ def test_live_world_model_feedback_executes_randomized_skill_library():
         stages.add(controller._feedback_stage)
         env.step(planned.action)
 
-    assert {"push", "hold", "carry", "regrasp", "pick_place"} <= skills
-    assert {"push_execute", "regrasp_release", "regrasp_retreat"} <= stages
+    assert {"push", "hold", "carry", "regrasp", "rim_hit", "pick_place"} <= skills
+    assert {
+        "push_execute",
+        "regrasp_release",
+        "regrasp_retreat",
+        "rim_hit_contact",
+        "rim_hit_hold",
+        "rim_hit_recover",
+    } <= stages
     assert controller.executed_action_count < controller.config.max_actions
 
 
@@ -766,6 +784,7 @@ def test_live_world_model_skill_plan_is_deterministic_per_layout_and_variant():
         world_model_movements=True,
         push_probability=0.5,
         regrasp_probability=0.5,
+        rim_hit_probability=0.5,
         carry_waypoints_min=2,
         carry_waypoints_max=5,
         carry_xy_jitter=0.08,

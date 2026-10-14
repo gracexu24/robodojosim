@@ -30,6 +30,7 @@ class Phase(str, Enum):
     HOLD = "hold"
     CARRY = "carry"
     PUSH = "push"
+    RIM_HIT = "rim_hit"
     TRANSIT = "transit"
     HANDOVER = "handover"
     RELEASE = "release"
@@ -118,6 +119,11 @@ class ControllerConfig:
     carry_xy_jitter: float = 0.0
     carry_z_jitter: float = 0.0
     regrasp_probability: float = 0.0
+    rim_hit_probability: float = 0.0
+    rim_hit_penetration: float = 0.005
+    rim_hit_clearance: float = 0.0
+    rim_hit_approach_height: float = 0.05
+    rim_hit_hold_steps: int = 3
     live_pose_feedback: bool = False
     max_grasp_retries: int = 3
     grasp_follow_tolerance: float = 0.045
@@ -184,7 +190,10 @@ class ControllerConfig:
             raise ValueError("workspace_min must be below workspace_max")
         if self.height_jitter < 0 or self.drop_xy_jitter < 0:
             raise ValueError("trajectory jitter values cannot be negative")
-        if not 0.0 <= self.push_probability <= 1.0 or not 0.0 <= self.regrasp_probability <= 1.0:
+        if not all(
+            0.0 <= probability <= 1.0
+            for probability in (self.push_probability, self.regrasp_probability, self.rim_hit_probability)
+        ):
             raise ValueError("movement probabilities must be between zero and one")
         if self.push_distance < 0 or self.carry_xy_jitter < 0 or self.carry_z_jitter < 0:
             raise ValueError("movement distances cannot be negative")
@@ -192,6 +201,10 @@ class ControllerConfig:
             raise ValueError("hold step range must be positive and ordered")
         if not 0 <= self.carry_waypoints_min <= self.carry_waypoints_max:
             raise ValueError("carry waypoint range must be non-negative and ordered")
+        if self.rim_hit_penetration < 0 or self.rim_hit_clearance < 0 or self.rim_hit_approach_height <= 0:
+            raise ValueError("rim-hit distances must be non-negative with a positive approach height")
+        if self.rim_hit_hold_steps < 1:
+            raise ValueError("rim_hit_hold_steps must be positive")
         if self.max_grasp_retries < 0:
             raise ValueError("max_grasp_retries cannot be negative")
         if self.grasp_follow_tolerance <= 0 or self.retry_carry_translation_step <= 0:
@@ -221,13 +234,20 @@ class ControllerConfig:
 
     @classmethod
     def from_json(cls, path: str | Path) -> ControllerConfig:
-        with Path(path).open(encoding="utf-8") as handle:
+        path = Path(path)
+        with path.open(encoding="utf-8") as handle:
             data = json.load(handle)
+        extends = data.pop("extends", None)
         allowed = {field.name for field in fields(cls)}
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise ValueError(f"unknown controller settings: {unknown}")
-        return cls(**data)
+        if extends is None:
+            return cls(**data)
+        base = cls.from_json(path.parent / str(extends))
+        merged = {field.name: getattr(base, field.name) for field in fields(cls)}
+        merged.update(data)
+        return cls(**merged)
 
 
 @dataclass(frozen=True)
@@ -298,6 +318,9 @@ class BottleController:
         self._carry_waypoint_index = 0
         self._regrasp_target: Pose | None = None
         self._regrasp_completed = False
+        self._rim_hit_completed = False
+        self._rim_hit_approach_target: Pose | None = None
+        self._rim_hit_contact_target: Pose | None = None
         self._push_start: Pose | None = None
         self._push_end: Pose | None = None
 
@@ -359,6 +382,9 @@ class BottleController:
         self._carry_waypoint_index = 0
         self._regrasp_target = None
         self._regrasp_completed = False
+        self._rim_hit_completed = False
+        self._rim_hit_approach_target = None
+        self._rim_hit_contact_target = None
         self._push_start = None
         self._push_end = None
         if self.config.live_pose_feedback:
@@ -401,6 +427,10 @@ class BottleController:
             "carry",
             "regrasp_return",
             "regrasp_lower",
+            "rim_hit_approach",
+            "rim_hit_contact",
+            "rim_hit_hold",
+            "rim_hit_recover",
             "transit_retract",
             "transit_lateral",
             "transit",
@@ -447,6 +477,9 @@ class BottleController:
                 self._carry_waypoint_index = 0
                 self._regrasp_target = None
                 self._regrasp_completed = False
+                self._rim_hit_completed = False
+                self._rim_hit_approach_target = None
+                self._rim_hit_contact_target = None
                 plan = self._skill_plans[self._active_bottle]
                 self._active_skill = "push" if plan["push"] else "pick_place"
                 self._push_start = None
@@ -657,9 +690,12 @@ class BottleController:
                         self._feedback_complete = True
                         raise StopIteration("scripted controller completed requested lift")
                     if self.config.world_model_movements and not self._world_skills_complete:
-                        self._carry_anchor = snapshot.arms[self._active_arm]
-                        self._feedback_repeat = 0
-                        self._feedback_stage = "hold"
+                        if self._regrasp_completed:
+                            self._begin_post_carry_skill()
+                        else:
+                            self._carry_anchor = snapshot.arms[self._active_arm]
+                            self._feedback_repeat = 0
+                            self._feedback_stage = "hold"
                     else:
                         self._active_skill = "pick_place"
                         self._feedback_stage = "transit_retract"
@@ -702,14 +738,7 @@ class BottleController:
                 assert self._carry_anchor is not None and self._carry_orientation is not None
                 offsets = self._skill_plans[self._active_bottle]["carry_offsets"]
                 if self._carry_waypoint_index >= len(offsets):
-                    self._feedback_target = None
-                    if self._skill_plans[self._active_bottle]["regrasp"] and not self._regrasp_completed:
-                        self._active_skill = "regrasp"
-                        self._feedback_stage = "regrasp_return"
-                    else:
-                        self._world_skills_complete = True
-                        self._active_skill = "pick_place"
-                        self._feedback_stage = "transit_retract"
+                    self._begin_post_carry_skill()
                     continue
                 if self._feedback_target is None:
                     offset = np.asarray(offsets[self._carry_waypoint_index], dtype=np.float64)
@@ -779,12 +808,58 @@ class BottleController:
                 ):
                     self._feedback_target = None
                     self._regrasp_completed = True
-                    self._world_skills_complete = True
                     self._active_skill = "regrasp"
                     self._feedback_stage = "rise"
                     continue
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
+                )
+
+            if stage == "rim_hit_approach":
+                if self._rim_hit_approach_target is None or self._rim_hit_contact_target is None:
+                    self._prepare_rim_hit_targets(snapshot)
+                assert self._rim_hit_approach_target is not None
+                if self._target_reached(snapshot, self._rim_hit_approach_target) or self._movement_stalled(
+                    snapshot, self._rim_hit_approach_target
+                ):
+                    self._feedback_stage = "rim_hit_contact"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._rim_hit_approach_target, Phase.RIM_HIT, self._carry_step()
+                )
+
+            if stage == "rim_hit_contact":
+                assert self._rim_hit_contact_target is not None
+                if self._target_reached(snapshot, self._rim_hit_contact_target) or self._movement_stalled(
+                    snapshot, self._rim_hit_contact_target
+                ):
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "rim_hit_hold"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._rim_hit_contact_target, Phase.RIM_HIT, self.config.max_lift_translation_step
+                )
+
+            if stage == "rim_hit_hold":
+                if self._feedback_repeat >= self.config.rim_hit_hold_steps:
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "rim_hit_recover"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.RIM_HIT)
+
+            if stage == "rim_hit_recover":
+                assert self._rim_hit_approach_target is not None
+                if self._target_reached(snapshot, self._rim_hit_approach_target) or self._movement_stalled(
+                    snapshot, self._rim_hit_approach_target
+                ):
+                    self._rim_hit_completed = True
+                    self._rim_hit_approach_target = None
+                    self._rim_hit_contact_target = None
+                    self._begin_post_carry_skill()
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._rim_hit_approach_target, Phase.RIM_HIT, self.config.max_lift_translation_step
                 )
 
             if stage == "transit_retract":
@@ -1181,6 +1256,10 @@ class BottleController:
             "regrasp_lower": Phase.CARRY,
             "regrasp_release": Phase.RELEASE,
             "regrasp_retreat": Phase.RETREAT,
+            "rim_hit_approach": Phase.RIM_HIT,
+            "rim_hit_contact": Phase.RIM_HIT,
+            "rim_hit_hold": Phase.RIM_HIT,
+            "rim_hit_recover": Phase.RIM_HIT,
             "transit_retract": Phase.TRANSIT,
             "transit_lateral": Phase.TRANSIT,
             "transit": Phase.TRANSIT,
@@ -1202,7 +1281,62 @@ class BottleController:
             return "carry"
         if self._feedback_stage.startswith("regrasp_") or self._active_skill == "regrasp":
             return "regrasp"
+        if self._feedback_stage.startswith("rim_hit_") or self._active_skill == "rim_hit":
+            return "rim_hit"
         return "pick_place"
+
+    def _begin_post_carry_skill(self) -> None:
+        assert self._active_bottle is not None
+        self._feedback_target = None
+        plan = self._skill_plans[self._active_bottle]
+        if plan["regrasp"] and not self._regrasp_completed:
+            self._active_skill = "regrasp"
+            self._feedback_stage = "regrasp_return"
+            return
+        if plan["rim_hit"] and not self._rim_hit_completed:
+            self._active_skill = "rim_hit"
+            self._feedback_stage = "rim_hit_approach"
+            return
+        self._world_skills_complete = True
+        self._active_skill = "pick_place"
+        self._feedback_stage = "transit_retract"
+
+    def _prepare_rim_hit_targets(self, snapshot: SceneSnapshot) -> None:
+        """Build a bounded held-bottle contact against one inner bin rim.
+
+        The contact pose puts the lower outside edge of the held bottle a few
+        millimetres into the nominal inner rim boundary.  A higher copy of the
+        same pose provides collision-safe approach and recovery waypoints.
+        """
+
+        assert self._active_bottle is not None and self._active_arm is not None
+        assert self._carry_orientation is not None and self._grasp_relative_position is not None
+        plan = self._skill_plans[self._active_bottle]
+        axis = int(plan["rim_hit_axis"])
+        direction = float(plan["rim_hit_direction"])
+        bottle = snapshot.bottles[self._active_bottle]
+        center = bbox_world_center(bottle.pose, bottle.bbox)
+        corners = (
+            center.reshape(1, 3) if bottle.bbox is None else bbox_world_corners(bottle.pose, bottle.bbox)
+        )
+        bottle_half_extent = float(np.max(np.abs(corners[:, axis] - center[axis])))
+        bin_center = snapshot.dustbin.pose.position
+        bin_half_extent = float(self.config.drop_validation_half_extents[axis])
+        desired_center = center.copy()
+        desired_center[1 - axis] = bin_center[1 - axis]
+        desired_center[axis] = bin_center[axis] + direction * (
+            bin_half_extent - bottle_half_extent + self.config.rim_hit_penetration
+        )
+        arm_position = desired_center - self._grasp_relative_position
+        dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
+        contact = arm_position.copy()
+        contact[2] = dustbin_top + self._grasp_to_bottom + self.config.rim_hit_clearance
+        approach = contact.copy()
+        approach[2] += self.config.rim_hit_approach_height
+        low = np.asarray(self.config.workspace_min) + 0.02
+        high = np.asarray(self.config.workspace_max) - 0.02
+        self._rim_hit_contact_target = Pose(np.clip(contact, low, high), self._carry_orientation)
+        self._rim_hit_approach_target = Pose(np.clip(approach, low, high), self._carry_orientation)
 
     def _initial_feedback_stage(self) -> str:
         return "push_rise" if self._active_skill == "push" else "rise"
@@ -1315,6 +1449,11 @@ class BottleController:
                 "regrasp": bool(
                     self.config.world_model_movements and not push and rng.random() < self.config.regrasp_probability
                 ),
+                "rim_hit": bool(
+                    self.config.world_model_movements and not push and rng.random() < self.config.rim_hit_probability
+                ),
+                "rim_hit_axis": int(rng.integers(0, 2)),
+                "rim_hit_direction": 1.0 if rng.random() < 0.5 else -1.0,
             }
         return plans
 

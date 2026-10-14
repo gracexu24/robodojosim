@@ -157,6 +157,11 @@ def run_campaign(
                 "ROBODOJOSIM_CONFIG": str(config_path),
                 "ROBODOJOSIM_EVAL_NUM": str(evaluation_count),
                 "ROBODOJOSIM_JPEG_QUALITY": "90",
+                # Supported policy and world-model campaigns always use the
+                # brown/yellow two-bottle scene.  Do not inherit an old shell
+                # override that silently restores the deprecated four-bottle
+                # handoff task.
+                "ROBODOJOSIM_TWO_BOTTLE_TASK": "1",
             }
         )
         command = [
@@ -179,6 +184,7 @@ def run_campaign(
                         "episode_offset": pass_index * 100_000,
                         "trajectory_variant": pass_index,
                         "layout_seed": evaluation_seed,
+                        "scene_variant": "two_bottle_brown_yellow",
                         "current_stats": stats.to_dict(),
                     },
                     indent=2,

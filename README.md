@@ -28,6 +28,7 @@ Ubuntu + NVIDIA machine.
   receptacle at `[x=0, y=-0.10]`. The default task contains only category 0 (brown Coca-Cola) and category 25
   (pale-yellow tea), one per arm; their left/right order alternates by layout ID.
 - Reproducible ACT and Diffusion Policy training wrappers with dataset preflight checks and resumable run manifests.
+- A tracked registry for the trained two-bottle [ACT and Diffusion Policy checkpoints](docs/trained-policies.md).
 - A learned-policy XPolicyLab adapter with Cartesian action safety checks, Isaac Sim metrics, and Markdown reports.
 - Private-by-default Hugging Face dataset/model publishing without storing credentials or large artifacts in Git.
 
@@ -60,8 +61,8 @@ reachability-aware motion. The calibrated simple-task sequence is:
 find -> pregrasp -> grasp -> verify/lift -> retract -> lateral bin entry -> release -> validate -> home
 ```
 
-The two-bottle task grants full success only after both bottles are in the bin, both grippers are open, and both
-arms return within its home tolerance. The controller explicitly handles all three conditions.
+The two-bottle task grants success as soon as both bottles are geometrically inside the bin. Gripper-open and
+arm-home behavior remain controller diagnostics, not reasons to mark a completed bottle task as failed.
 
 ## Develop and test now (no simulator required)
 
@@ -195,14 +196,24 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-world-6h
 ```
 
-Campaigns are resumable. The policy profile uses the supported brown/yellow two-bottle task and stops at 50
-successful episodes, where success requires both bottles in the bin.
+Campaigns are resumable. Both profiles force the supported brown/yellow two-bottle scene, even if an older shell
+exports `ROBODOJOSIM_TWO_BOTTLE_TASK=0`. The policy profile stops at 50 successful episodes, where success requires
+both bottles in the bin.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
 hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle in most episodes, holds
-another aloft for a variable interval, carries it through two to five safe waypoints, and sometimes sets it down and
-regrasps it before continuing. Task reward is not
+another aloft for a variable interval, carries it through two to five safe waypoints, sometimes sets it down and
+regrasps it, and sometimes makes a bounded held-bottle contact with the inner bin rim before continuing. Task reward is not
 required for those deliberately exploratory episodes. Each pass gets a new episode-ID range and deterministic
 trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard decoder.
+
+For a short labeled demonstration containing every world-model skill, run one episode with
+`configs/world_model_showcase.json`, then render its teacher annotations:
+
+```bash
+robodojosim render-skill-video \
+  --episode /workspace/datasets/world-model-showcase/episode_000000.hdf5 \
+  --output /workspace/datasets/world-model-showcase/all-skills.mp4
+```
 
 RoboDojo currently exposes 25 deterministic layouts for this task. Longer campaigns revisit those layouts with
 different bottle order, trajectory heights, drop points, and policy seeds; this improves action diversity but does

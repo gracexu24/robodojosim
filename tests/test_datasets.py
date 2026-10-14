@@ -127,6 +127,7 @@ def test_policy_campaign_reaches_exactly_50_successes_and_writes_splits(tmp_path
 
     def fake_run(command, env, check):
         assert check is True
+        assert env["ROBODOJOSIM_TWO_BOTTLE_TASK"] == "1"
         count = int(env["ROBODOJOSIM_EVAL_NUM"])
         offset = int(env["ROBODOJOSIM_EPISODE_OFFSET"])
         profile = env["ROBODOJOSIM_COLLECTION_PROFILE"]

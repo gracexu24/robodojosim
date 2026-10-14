@@ -13,6 +13,7 @@ from .layouts import centralize_dustbin, normalize_bottle_mass
 from .lerobot_export import export_lerobot
 from .mock_env import MockBottleEnv
 from .recording import EpisodeRecorder, validate_episode
+from .showcase import render_skill_video
 from .training import TrainingSpec, inspect_lerobot_dataset, run_training
 
 
@@ -234,6 +235,17 @@ def _summarize_evaluation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_skill_video(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            render_skill_video(args.episode, args.output, camera=args.camera),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def _push_dataset(args: argparse.Namespace) -> int:
     result = push_dataset(
         args.dataset,
@@ -383,6 +395,14 @@ def build_parser() -> argparse.ArgumentParser:
     eval_report = subparsers.add_parser("summarize-evaluation", help="write JSON, CSV, and Markdown evaluation reports")
     eval_report.add_argument("--output", required=True)
     eval_report.set_defaults(func=_summarize_evaluation)
+    skill_video = subparsers.add_parser(
+        "render-skill-video",
+        help="render a labeled MP4 from a world-model HDF5 episode",
+    )
+    skill_video.add_argument("--episode", required=True)
+    skill_video.add_argument("--output", required=True)
+    skill_video.add_argument("--camera", default="cam_head")
+    skill_video.set_defaults(func=_render_skill_video)
     dataset_push = subparsers.add_parser("push-dataset", help="upload a validated LeRobot tree to Hugging Face")
     dataset_push.add_argument("--dataset", required=True)
     dataset_push.add_argument("--repo-id", required=True)

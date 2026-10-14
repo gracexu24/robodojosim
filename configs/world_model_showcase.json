@@ -1,0 +1,13 @@
+{
+  "extends": "world_model_data.json",
+  "push_probability": 1.0,
+  "regrasp_probability": 1.0,
+  "rim_hit_probability": 1.0,
+  "hold_steps_min": 12,
+  "hold_steps_max": 12,
+  "carry_waypoints_min": 2,
+  "carry_waypoints_max": 2,
+  "vary_bottle_order": false,
+  "height_jitter": 0.0,
+  "drop_xy_jitter": 0.0
+}

@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "task": "two_bottle_brown_yellow",
+  "dataset": {
+    "episodes": 50,
+    "frames": 12954,
+    "path": "/home/gracexu/robodojo-work/datasets/bottle-two-color-policy-50/lerobot"
+  },
+  "policies": [
+    {
+      "id": "bottle-act-two-color-50",
+      "family": "act",
+      "status": "trained",
+      "training_steps": 20000,
+      "checkpoint": "/home/gracexu/robodojo-work/models/bottle-act-two-color-50/checkpoints/last/pretrained_model"
+    },
+    {
+      "id": "bottle-diffusion-two-color-50",
+      "family": "diffusion",
+      "status": "trained",
+      "training_steps": 20000,
+      "checkpoint": "/home/gracexu/robodojo-work/models/bottle-diffusion-two-color-50/checkpoints/last/pretrained_model"
+    }
+  ]
+}

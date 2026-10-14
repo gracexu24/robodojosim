@@ -120,7 +120,8 @@ conda run -n RoboDojo robodojosim campaign \
 
 Keep these in separate directories. The first command stops at 50 successful simple-task episodes. The second stops
 at six hours of complete randomized interaction frames; its episodes include pushing, airborne holding, waypoint
-carrying, and set-down/regrasp sequences.
+carrying, set-down/regrasp sequences, and bounded bottle contacts against the inner bin rim. Both campaign profiles
+force the brown/yellow two-bottle scene.
 That estimate changes after calibration, so use `robodojosim report` rather than an episode count for the world-model
 target.
 
@@ -151,5 +152,5 @@ Before training:
 | Bottle collides during transit | lift too low | raise `lift_height` |
 | Right bottle cannot reach bin | public far-left layout is active | enable the default tabletop-dustbin transform |
 | Bottle hits bin rim | drop target too low | raise `drop_clearance` |
-| Objects placed but task not complete | arms not home or gripper not open | inspect final EE/gripper state and reward checks |
+| Objects placed but task not complete | one bottle is not geometrically inside the bin | inspect final object bounds and bin containment |
 | `ModuleNotFoundError: robodojosim` | overlay not installed in eval env | rerun installer with the RoboDojo env name |
