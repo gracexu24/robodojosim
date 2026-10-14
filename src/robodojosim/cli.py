@@ -319,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     campaign = subparsers.add_parser("campaign", help="collect until a policy-episode or world-model-hour quota")
     campaign.add_argument("--profile", required=True, choices=("policy", "world_model"))
     campaign.add_argument("--xpolicylab", required=True)
-    campaign.add_argument("--policy-env", default="RoboDojo")
+    campaign.add_argument("--policy-env", default="RoboDojoPolicy")
     campaign.add_argument("--eval-env", default="RoboDojo")
     campaign.add_argument("--output", required=True)
     campaign.add_argument("--policy-seed", type=int, default=0)

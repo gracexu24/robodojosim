@@ -180,7 +180,7 @@ After the one-layout calibration succeeds, collect 50 successful policy episodes
 conda run -n RoboDojo robodojosim campaign \
   --profile policy \
   --xpolicylab /workspace/RoboDojo/XPolicyLab \
-  --policy-env RoboDojo \
+  --policy-env RoboDojoPolicy \
   --eval-env RoboDojo \
   --output /workspace/datasets/bottle-policy-50
 ```
@@ -191,7 +191,7 @@ Collect at least six hours of complete 25 Hz world-model interactions:
 conda run -n RoboDojo robodojosim campaign \
   --profile world_model \
   --xpolicylab /workspace/RoboDojo/XPolicyLab \
-  --policy-env RoboDojo \
+  --policy-env RoboDojoPolicy \
   --eval-env RoboDojo \
   --output /workspace/datasets/bottle-world-6h
 ```

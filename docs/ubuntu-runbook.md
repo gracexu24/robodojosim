@@ -28,7 +28,7 @@ workflow. New collection, training, and evaluation should use the default two-bo
 ```bash
 cd /workspace/robodojosim
 bash scripts/install_xpolicylab_adapter.sh \
-  /workspace/RoboDojo/XPolicyLab RoboDojo RoboDojo
+  /workspace/RoboDojo/XPolicyLab
 ```
 
 The installer updates the two XPolicyLab adapters and installs a reversible two-bottle reward overlay. The original
@@ -40,7 +40,7 @@ RoboDojo task module is retained as `put_bottles_into_dustbin.py.robodojosim-fou
 mkdir -p /workspace/datasets/bottle-smoke
 ROBODOJOSIM_EVAL_NUM=1 bash scripts/run_collection.sh \
   /workspace/RoboDojo/XPolicyLab \
-  0 RoboDojo RoboDojo /workspace/datasets/bottle-smoke
+  0 RoboDojoPolicy RoboDojo /workspace/datasets/bottle-smoke
 ```
 
 In another shell, watch GPU memory with `nvidia-smi`. The policy server is only a lightweight heartbeat; almost all
