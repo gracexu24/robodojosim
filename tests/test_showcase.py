@@ -19,7 +19,7 @@ def test_render_skill_video_labels_recorded_world_model_episode(tmp_path):
         instruction="test",
         jpeg_quality=80,
     )
-    skills = ["push", "hold", "carry", "regrasp", "rim_hit", "pick_place"]
+    skills = ["push", "hold", "carry", "mid_pick_waypoint", "regrasp", "rim_hit", "pick_place"]
     for skill in skills:
         recorder.append(
             env.observation(),

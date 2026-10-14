@@ -29,6 +29,7 @@ class Phase(str, Enum):
     LIFT = "lift"
     HOLD = "hold"
     CARRY = "carry"
+    WAYPOINT = "waypoint"
     PUSH = "push"
     RIM_HIT = "rim_hit"
     TRANSIT = "transit"
@@ -112,12 +113,20 @@ class ControllerConfig:
     push_probability: float = 0.0
     push_distance: float = 0.10
     push_center_offset: float = 0.115
+    push_forward_only: bool = False
     hold_steps_min: int = 1
     hold_steps_max: int = 1
     carry_waypoints_min: int = 0
     carry_waypoints_max: int = 0
     carry_xy_jitter: float = 0.0
     carry_z_jitter: float = 0.0
+    mid_pick_waypoint_probability: float = 0.0
+    mid_pick_pause_steps_min: int = 0
+    mid_pick_pause_steps_max: int = 0
+    mid_pick_waypoints_min: int = 0
+    mid_pick_waypoints_max: int = 0
+    mid_pick_xy_jitter: float = 0.0
+    mid_pick_z_jitter: float = 0.0
     regrasp_probability: float = 0.0
     rim_hit_probability: float = 0.0
     rim_hit_penetration: float = 0.005
@@ -192,15 +201,30 @@ class ControllerConfig:
             raise ValueError("trajectory jitter values cannot be negative")
         if not all(
             0.0 <= probability <= 1.0
-            for probability in (self.push_probability, self.regrasp_probability, self.rim_hit_probability)
+            for probability in (
+                self.push_probability,
+                self.mid_pick_waypoint_probability,
+                self.regrasp_probability,
+                self.rim_hit_probability,
+            )
         ):
             raise ValueError("movement probabilities must be between zero and one")
-        if self.push_distance < 0 or self.carry_xy_jitter < 0 or self.carry_z_jitter < 0:
+        if (
+            self.push_distance < 0
+            or self.carry_xy_jitter < 0
+            or self.carry_z_jitter < 0
+            or self.mid_pick_xy_jitter < 0
+            or self.mid_pick_z_jitter < 0
+        ):
             raise ValueError("movement distances cannot be negative")
         if not 1 <= self.hold_steps_min <= self.hold_steps_max:
             raise ValueError("hold step range must be positive and ordered")
         if not 0 <= self.carry_waypoints_min <= self.carry_waypoints_max:
             raise ValueError("carry waypoint range must be non-negative and ordered")
+        if not 0 <= self.mid_pick_pause_steps_min <= self.mid_pick_pause_steps_max:
+            raise ValueError("mid-pick pause range must be non-negative and ordered")
+        if not 0 <= self.mid_pick_waypoints_min <= self.mid_pick_waypoints_max:
+            raise ValueError("mid-pick waypoint range must be non-negative and ordered")
         if self.rim_hit_penetration < 0 or self.rim_hit_clearance < 0 or self.rim_hit_approach_height <= 0:
             raise ValueError("rim-hit distances must be non-negative with a positive approach height")
         if self.rim_hit_hold_steps < 1:
@@ -316,6 +340,9 @@ class BottleController:
         self._world_skills_complete = False
         self._carry_anchor: Pose | None = None
         self._carry_waypoint_index = 0
+        self._midway_anchor: Pose | None = None
+        self._midway_waypoint_index = 0
+        self._midway_completed = False
         self._regrasp_target: Pose | None = None
         self._regrasp_completed = False
         self._rim_hit_completed = False
@@ -380,6 +407,9 @@ class BottleController:
         self._world_skills_complete = False
         self._carry_anchor = None
         self._carry_waypoint_index = 0
+        self._midway_anchor = None
+        self._midway_waypoint_index = 0
+        self._midway_completed = False
         self._regrasp_target = None
         self._regrasp_completed = False
         self._rim_hit_completed = False
@@ -425,6 +455,8 @@ class BottleController:
             "lift",
             "hold",
             "carry",
+            "midway_pause",
+            "midway_waypoint",
             "regrasp_return",
             "regrasp_lower",
             "rim_hit_approach",
@@ -475,6 +507,9 @@ class BottleController:
                 self._world_skills_complete = False
                 self._carry_anchor = None
                 self._carry_waypoint_index = 0
+                self._midway_anchor = None
+                self._midway_waypoint_index = 0
+                self._midway_completed = False
                 self._regrasp_target = None
                 self._regrasp_completed = False
                 self._rim_hit_completed = False
@@ -873,9 +908,54 @@ class BottleController:
                 stalled = self._movement_stalled(snapshot, self._feedback_target)
                 if reached or stalled:
                     self._feedback_target = None
-                    self._feedback_stage = "transit_lateral"
+                    plan = self._skill_plans[self._active_bottle]
+                    if plan["mid_pick_waypoint"] and not self._midway_completed:
+                        self._midway_anchor = snapshot.arms[self._active_arm]
+                        self._midway_waypoint_index = 0
+                        self._feedback_repeat = 0
+                        self._active_skill = "mid_pick_waypoint"
+                        self._feedback_stage = "midway_pause"
+                    else:
+                        self._active_skill = "pick_place"
+                        self._feedback_stage = "transit_lateral"
                     continue
                 return self._feedback_move_action(snapshot, self._feedback_target, Phase.TRANSIT, self._carry_step())
+
+            if stage == "midway_pause":
+                assert self._active_bottle is not None
+                pause_steps = int(self._skill_plans[self._active_bottle]["mid_pick_pause_steps"])
+                if self._feedback_repeat >= pause_steps:
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "midway_waypoint"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.WAYPOINT)
+
+            if stage == "midway_waypoint":
+                assert self._active_bottle is not None and self._active_arm is not None
+                assert self._midway_anchor is not None and self._carry_orientation is not None
+                offsets = self._skill_plans[self._active_bottle]["mid_pick_offsets"]
+                if self._midway_waypoint_index >= len(offsets):
+                    self._midway_completed = True
+                    self._feedback_target = None
+                    self._active_skill = "pick_place"
+                    self._feedback_stage = "transit_lateral"
+                    continue
+                if self._feedback_target is None:
+                    offset = np.asarray(offsets[self._midway_waypoint_index], dtype=np.float64)
+                    position = np.clip(
+                        self._midway_anchor.position + offset,
+                        np.asarray(self.config.workspace_min) + 0.02,
+                        np.asarray(self.config.workspace_max) - 0.02,
+                    )
+                    self._feedback_target = Pose(position, self._carry_orientation)
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._midway_waypoint_index += 1
+                    self._feedback_target = None
+                    continue
+                return self._feedback_move_action(snapshot, self._feedback_target, Phase.WAYPOINT, self._carry_step())
 
             if stage == "transit_lateral":
                 assert self._active_arm is not None
@@ -1261,6 +1341,8 @@ class BottleController:
             "rim_hit_hold": Phase.RIM_HIT,
             "rim_hit_recover": Phase.RIM_HIT,
             "transit_retract": Phase.TRANSIT,
+            "midway_pause": Phase.WAYPOINT,
+            "midway_waypoint": Phase.WAYPOINT,
             "transit_lateral": Phase.TRANSIT,
             "transit": Phase.TRANSIT,
             "place": Phase.TRANSIT,
@@ -1279,6 +1361,8 @@ class BottleController:
             return "hold"
         if self._feedback_stage == "carry":
             return "carry"
+        if self._feedback_stage.startswith("midway_") or self._active_skill == "mid_pick_waypoint":
+            return "mid_pick_waypoint"
         if self._feedback_stage.startswith("regrasp_") or self._active_skill == "regrasp":
             return "regrasp"
         if self._feedback_stage.startswith("rim_hit_") or self._active_skill == "rim_hit":
@@ -1441,11 +1525,47 @@ class BottleController:
             ]
             if offsets:
                 offsets.append((0.0, 0.0, 0.0))
+            mid_pick_waypoint = bool(
+                self.config.world_model_movements
+                and not push
+                and rng.random() < self.config.mid_pick_waypoint_probability
+            )
+            mid_pick_waypoint_count = (
+                int(rng.integers(self.config.mid_pick_waypoints_min, self.config.mid_pick_waypoints_max + 1))
+                if mid_pick_waypoint
+                else 0
+            )
+            mid_pick_offsets = [
+                (
+                    float(rng.uniform(-self.config.mid_pick_xy_jitter, self.config.mid_pick_xy_jitter)),
+                    float(rng.uniform(-self.config.mid_pick_xy_jitter, self.config.mid_pick_xy_jitter)),
+                    float(rng.uniform(-self.config.mid_pick_z_jitter, self.config.mid_pick_z_jitter)),
+                )
+                for _ in range(mid_pick_waypoint_count)
+            ]
+            if mid_pick_offsets:
+                # Resume the nominal pick/place route from the point where it
+                # was interrupted, instead of cutting directly to the bin.
+                mid_pick_offsets.append((0.0, 0.0, 0.0))
             plans[label] = {
                 "push": push,
-                "push_direction": 1.0 if rng.random() < 0.5 else -1.0,
+                # Positive table Y points away from the robots and toward the
+                # work area/bin in RoboDojo's bottle task.
+                "push_direction": 1.0
+                if self.config.push_forward_only or rng.random() < 0.5
+                else -1.0,
                 "hold_steps": hold_steps,
                 "carry_offsets": tuple(offsets),
+                "mid_pick_waypoint": mid_pick_waypoint and bool(mid_pick_offsets),
+                "mid_pick_pause_steps": int(
+                    rng.integers(
+                        self.config.mid_pick_pause_steps_min,
+                        self.config.mid_pick_pause_steps_max + 1,
+                    )
+                )
+                if mid_pick_waypoint
+                else 0,
+                "mid_pick_offsets": tuple(mid_pick_offsets),
                 "regrasp": bool(
                     self.config.world_model_movements and not push and rng.random() < self.config.regrasp_probability
                 ),
@@ -1876,7 +1996,7 @@ class BottleController:
         label: str,
         rng: np.random.Generator,
     ) -> None:
-        direction = 1.0 if rng.random() < 0.5 else -1.0
+        direction = 1.0 if self.config.push_forward_only or rng.random() < 0.5 else -1.0
         start = bottle_position.copy()
         start[1] -= direction * self.config.push_distance * 0.5
         start[2] += self.config.push_center_offset

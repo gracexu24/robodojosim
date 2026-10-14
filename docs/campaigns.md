@@ -35,14 +35,16 @@ RoboDojo's current public bottle task supplies 25 deterministic layout IDs. Camp
 
 Every skill reads the current simulator object and robot poses on every control step. Randomness selects a deterministic
 skill program for a layout/trajectory variant; it does not replace feedback with memorized joint trajectories. The
-source HDF5 records `teacher/skill` (`push`, `hold`, `carry`, `regrasp`, `rim_hit`, or `pick_place`) alongside the phase and
-privileged object poses, while LeRobot policy observations remain camera images plus robot state.
+source HDF5 records `teacher/skill` (`push`, `hold`, `carry`, `mid_pick_waypoint`, `regrasp`, `rim_hit`, or
+`pick_place`) alongside the phase and privileged object poses, while LeRobot policy observations remain camera images
+plus robot state. Pushes travel forward along the table. The distinct `mid_pick_waypoint` skill pauses an active
+pick/place transfer, follows randomized collision-safe waypoints, returns to the interrupted route, and resumes it.
 
 Both campaign profiles explicitly install and select the brown-cola/yellow-tea two-bottle scene. The old four-bottle
 handoff scene cannot be enabled accidentally through a stale `ROBODOJOSIM_TWO_BOTTLE_TASK=0` shell variable.
 
-`configs/world_model_showcase.json` inherits the calibrated six-hour profile and forces one push plus hold, carry,
-regrasp, rim-hit, and pick/place motions into a single two-bottle episode. Use `robodojosim render-skill-video` to
+`configs/world_model_showcase.json` inherits the calibrated six-hour profile and forces one forward push plus hold,
+carry, mid-pick waypoint interruption, regrasp, rim-hit, and pick/place motions into a single two-bottle episode. Use `robodojosim render-skill-video` to
 turn its recorded head camera and `teacher/skill` annotations into a labeled MP4 for inspection.
 
 This creates useful action and interaction variation, but initial bottle/object scenes still come from those 25

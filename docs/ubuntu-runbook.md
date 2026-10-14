@@ -119,9 +119,9 @@ conda run -n RoboDojo robodojosim campaign \
 ```
 
 Keep these in separate directories. The first command stops at 50 successful simple-task episodes. The second stops
-at six hours of complete randomized interaction frames; its episodes include pushing, airborne holding, waypoint
-carrying, set-down/regrasp sequences, and bounded bottle contacts against the inner bin rim. Both campaign profiles
-force the brown/yellow two-bottle scene.
+at six hours of complete randomized interaction frames; its episodes include forward tabletop pushes, airborne
+holding, waypoint carrying, mid-pick/place waypoint interruptions, set-down/regrasp sequences, and bounded bottle
+contacts against the inner bin rim. Both campaign profiles force the brown/yellow two-bottle scene.
 That estimate changes after calibration, so use `robodojosim report` rather than an episode count for the world-model
 target.
 

@@ -31,6 +31,8 @@ def test_showcase_profile_extends_world_model_and_forces_every_skill():
     assert config.world_model_movements is True
     assert config.live_pose_feedback is True
     assert config.push_probability == 1.0
+    assert config.push_forward_only is True
+    assert config.mid_pick_waypoint_probability == 1.0
     assert config.regrasp_probability == 1.0
     assert config.rim_hit_probability == 1.0
 
@@ -736,6 +738,14 @@ def test_live_world_model_feedback_executes_randomized_skill_library():
         ControllerConfig(
             world_model_movements=True,
             push_probability=1.0,
+            push_forward_only=True,
+            mid_pick_waypoint_probability=1.0,
+            mid_pick_pause_steps_min=2,
+            mid_pick_pause_steps_max=2,
+            mid_pick_waypoints_min=1,
+            mid_pick_waypoints_max=1,
+            mid_pick_xy_jitter=0.04,
+            mid_pick_z_jitter=0.02,
             regrasp_probability=1.0,
             rim_hit_probability=1.0,
             bottle_limit=2,
@@ -766,9 +776,11 @@ def test_live_world_model_feedback_executes_randomized_skill_library():
         stages.add(controller._feedback_stage)
         env.step(planned.action)
 
-    assert {"push", "hold", "carry", "regrasp", "rim_hit", "pick_place"} <= skills
+    assert {"push", "hold", "carry", "mid_pick_waypoint", "regrasp", "rim_hit", "pick_place"} <= skills
     assert {
         "push_execute",
+        "midway_pause",
+        "midway_waypoint",
         "regrasp_release",
         "regrasp_retreat",
         "rim_hit_contact",
@@ -789,6 +801,13 @@ def test_live_world_model_skill_plan_is_deterministic_per_layout_and_variant():
         carry_waypoints_max=5,
         carry_xy_jitter=0.08,
         carry_z_jitter=0.04,
+        mid_pick_waypoint_probability=0.5,
+        mid_pick_pause_steps_min=3,
+        mid_pick_pause_steps_max=8,
+        mid_pick_waypoints_min=1,
+        mid_pick_waypoints_max=3,
+        mid_pick_xy_jitter=0.06,
+        mid_pick_z_jitter=0.03,
         live_pose_feedback=True,
     )
     first = BottleController(config, trajectory_variant=7)
@@ -800,3 +819,22 @@ def test_live_world_model_skill_plan_is_deterministic_per_layout_and_variant():
 
     assert first._skill_plans == repeated._skill_plans
     assert first._skill_plans != different._skill_plans
+
+
+def test_forward_push_moves_away_from_robots_along_table_y():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            world_model_movements=True,
+            push_probability=1.0,
+            push_forward_only=True,
+            bottle_limit=2,
+            live_pose_feedback=True,
+        )
+    )
+    controller.reset(env.snapshot())
+    controller.next_action(env.snapshot())
+
+    assert controller._push_start is not None
+    assert controller._push_end is not None
+    assert controller._push_end.position[1] > controller._push_start.position[1]

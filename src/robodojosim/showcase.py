@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -14,6 +17,7 @@ _SKILL_COLORS = {
     "push": (60, 170, 255),
     "hold": (255, 190, 70),
     "carry": (100, 220, 100),
+    "mid_pick_waypoint": (255, 120, 210),
     "regrasp": (220, 130, 255),
     "rim_hit": (80, 80, 255),
     "pick_place": (255, 255, 255),
@@ -60,8 +64,9 @@ def render_skill_video(
         first = _rgb_frame(images, 0)
         height, width = first.shape[:2]
         output.parent.mkdir(parents=True, exist_ok=True)
+        intermediate = output.with_name(f".{output.stem}.mp4v{output.suffix}")
         writer = cv2.VideoWriter(
-            str(output),
+            str(intermediate),
             cv2.VideoWriter_fourcc(*"mp4v"),
             float(fps),
             (width, height),
@@ -103,6 +108,33 @@ def render_skill_video(
                 writer.write(bgr)
         finally:
             writer.release()
+
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(intermediate),
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    "20",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
+                    "-an",
+                    str(output),
+                ],
+                check=True,
+            )
+            intermediate.unlink()
+        else:
+            os.replace(intermediate, output)
 
     ordered_skills = list(dict.fromkeys(skills))
     return {

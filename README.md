@@ -200,11 +200,13 @@ Campaigns are resumable. Both profiles force the supported brown/yellow two-bott
 exports `ROBODOJOSIM_TWO_BOTTLE_TASK=0`. The policy profile stops at 50 successful episodes, where success requires
 both bottles in the bin.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
-hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle in most episodes, holds
-another aloft for a variable interval, carries it through two to five safe waypoints, sometimes sets it down and
-regrasps it, and sometimes makes a bounded held-bottle contact with the inner bin rim before continuing. Task reward is not
-required for those deliberately exploratory episodes. Each pass gets a new episode-ID range and deterministic
-trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard decoder.
+hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle forward along the tabletop,
+holds another aloft for a variable interval, carries it through two to five safe waypoints, sometimes sets it down and
+regrasps it, and sometimes makes a bounded held-bottle contact with the inner bin rim. It can also pause an active
+pick/place transfer, follow one to three additional random waypoints, return to the interrupted route, and finish the
+placement. Task reward is not required for those deliberately exploratory episodes. Each pass gets a new episode-ID
+range and deterministic trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard
+decoder.
 
 For a short labeled demonstration containing every world-model skill, run one episode with
 `configs/world_model_showcase.json`, then render its teacher annotations:
