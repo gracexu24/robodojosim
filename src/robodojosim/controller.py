@@ -133,6 +133,13 @@ class ControllerConfig:
     rim_hit_clearance: float = 0.0
     rim_hit_approach_height: float = 0.05
     rim_hit_hold_steps: int = 3
+    rim_hit_side_collision: bool = False
+    rim_hit_underlift: float = 0.04
+    rim_hit_side_approach_distance: float = 0.06
+    rim_hit_near_side_probability: float = 0.5
+    failure_mode: str = "none"
+    intentional_miss_offset: float = 0.12
+    prebin_drop_hold_steps: int = 5
     live_pose_feedback: bool = False
     max_grasp_retries: int = 3
     grasp_follow_tolerance: float = 0.045
@@ -229,6 +236,14 @@ class ControllerConfig:
             raise ValueError("rim-hit distances must be non-negative with a positive approach height")
         if self.rim_hit_hold_steps < 1:
             raise ValueError("rim_hit_hold_steps must be positive")
+        if self.rim_hit_underlift < 0 or self.rim_hit_side_approach_distance <= 0:
+            raise ValueError("side-collision underlift must be non-negative and approach distance positive")
+        if not 0.0 <= self.rim_hit_near_side_probability <= 1.0:
+            raise ValueError("rim_hit_near_side_probability must be between zero and one")
+        if self.failure_mode not in {"none", "cycle"}:
+            raise ValueError("failure_mode must be 'none' or 'cycle'")
+        if self.intentional_miss_offset <= 0 or self.prebin_drop_hold_steps < 1:
+            raise ValueError("failure injection distances and hold steps must be positive")
         if self.max_grasp_retries < 0:
             raise ValueError("max_grasp_retries cannot be negative")
         if self.grasp_follow_tolerance <= 0 or self.retry_carry_translation_step <= 0:
@@ -348,6 +363,7 @@ class BottleController:
         self._rim_hit_completed = False
         self._rim_hit_approach_target: Pose | None = None
         self._rim_hit_contact_target: Pose | None = None
+        self._failure_completed = False
         self._push_start: Pose | None = None
         self._push_end: Pose | None = None
 
@@ -415,6 +431,7 @@ class BottleController:
         self._rim_hit_completed = False
         self._rim_hit_approach_target = None
         self._rim_hit_contact_target = None
+        self._failure_completed = False
         self._push_start = None
         self._push_end = None
         if self.config.live_pose_feedback:
@@ -515,6 +532,7 @@ class BottleController:
                 self._rim_hit_completed = False
                 self._rim_hit_approach_target = None
                 self._rim_hit_contact_target = None
+                self._failure_completed = False
                 plan = self._skill_plans[self._active_bottle]
                 self._active_skill = "push" if plan["push"] else "pick_place"
                 self._push_start = None
@@ -850,6 +868,37 @@ class BottleController:
                     snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
                 )
 
+            if stage == "prebin_drop_release":
+                assert self._active_arm is not None
+                self._command_grippers[self._active_arm] = self.config.open_value
+                if self._feedback_repeat >= self.config.prebin_drop_hold_steps:
+                    self._feedback_repeat = 0
+                    self._grasp_relative_position = None
+                    current = snapshot.arms[self._active_arm]
+                    position = np.minimum(
+                        current.position + [0.0, 0.0, self.config.recovery_retreat_height],
+                        np.asarray(self.config.workspace_max) - 0.02,
+                    )
+                    self._feedback_target = current.at(position)
+                    self._feedback_stage = "prebin_drop_retreat"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.RELEASE)
+
+            if stage == "prebin_drop_retreat":
+                assert self._feedback_target is not None
+                if self._target_reached(snapshot, self._feedback_target) or self._movement_stalled(
+                    snapshot, self._feedback_target
+                ):
+                    self._feedback_target = None
+                    self._failure_completed = True
+                    self._active_skill = "prebin_drop"
+                    self._feedback_stage = "rise"
+                    continue
+                return self._feedback_move_action(
+                    snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
+                )
+
             if stage == "rim_hit_approach":
                 if self._rim_hit_approach_target is None or self._rim_hit_contact_target is None:
                     self._prepare_rim_hit_targets(snapshot)
@@ -1120,6 +1169,8 @@ class BottleController:
             raise SafetyError(f"feedback recovery has no active bottle: {reason}")
         retry = self._retry_counts.get(self._active_bottle, 0) + 1
         self._retry_counts[self._active_bottle] = retry
+        if self._active_failure_mode() == "missed_grasp":
+            self._failure_completed = True
         if retry > self.config.max_grasp_retries:
             raise SafetyError(f"{self._active_bottle} failed after {self.config.max_grasp_retries} retries: {reason}")
         print(f"[bottle_controller] retry={retry} bottle={self._active_bottle} reason={reason}")
@@ -1162,6 +1213,11 @@ class BottleController:
         grasp_position += np.asarray(
             getattr(self.config, f"{self._active_arm}_grasp_position_offset"), dtype=np.float64
         )
+        if self._active_failure_mode() == "missed_grasp" and not self._failure_completed:
+            retries = self._retry_counts.get(self._active_bottle, 0)
+            if retries == 0:
+                direction = -1.0 if self._active_arm == "left" else 1.0
+                grasp_position[0] += direction * self.config.intentional_miss_offset
         if bottle_top - bottle_center[2] <= self.config.horizontal_bottle_half_height_max:
             grasp_position += np.asarray(
                 getattr(self.config, f"{self._active_arm}_horizontal_grasp_position_offset"),
@@ -1336,6 +1392,8 @@ class BottleController:
             "regrasp_lower": Phase.CARRY,
             "regrasp_release": Phase.RELEASE,
             "regrasp_retreat": Phase.RETREAT,
+            "prebin_drop_release": Phase.RELEASE,
+            "prebin_drop_retreat": Phase.RETREAT,
             "rim_hit_approach": Phase.RIM_HIT,
             "rim_hit_contact": Phase.RIM_HIT,
             "rim_hit_hold": Phase.RIM_HIT,
@@ -1355,6 +1413,11 @@ class BottleController:
         }.get(self._feedback_stage, Phase.DONE)
 
     def _feedback_skill(self) -> str:
+        failure_mode = self._active_failure_mode()
+        if failure_mode == "missed_grasp" and not self._failure_completed:
+            return "missed_grasp"
+        if self._feedback_stage.startswith("prebin_drop_") or self._active_skill == "prebin_drop":
+            return "prebin_drop"
         if self._feedback_stage.startswith("push_") or self._active_skill == "push":
             return "push"
         if self._feedback_stage == "hold":
@@ -1373,6 +1436,11 @@ class BottleController:
         assert self._active_bottle is not None
         self._feedback_target = None
         plan = self._skill_plans[self._active_bottle]
+        if plan["failure_mode"] == "prebin_drop" and not self._failure_completed:
+            self._active_skill = "prebin_drop"
+            self._feedback_repeat = 0
+            self._feedback_stage = "prebin_drop_release"
+            return
         if plan["regrasp"] and not self._regrasp_completed:
             self._active_skill = "regrasp"
             self._feedback_stage = "regrasp_return"
@@ -1386,11 +1454,12 @@ class BottleController:
         self._feedback_stage = "transit_retract"
 
     def _prepare_rim_hit_targets(self, snapshot: SceneSnapshot) -> None:
-        """Build a bounded held-bottle contact against one inner bin rim.
+        """Build a bounded held-bottle contact against the configured bin boundary.
 
-        The contact pose puts the lower outside edge of the held bottle a few
-        millimetres into the nominal inner rim boundary.  A higher copy of the
-        same pose provides collision-safe approach and recovery waypoints.
+        Legacy configurations touch the inner rim from above.  World-model
+        configurations approach an outer wall from the side while the bottle
+        bottom is deliberately below the rim, producing the requested
+        insufficient-lift collision and a reversible recovery trajectory.
         """
 
         assert self._active_bottle is not None and self._active_arm is not None
@@ -1408,19 +1477,42 @@ class BottleController:
         bin_half_extent = float(self.config.drop_validation_half_extents[axis])
         desired_center = center.copy()
         desired_center[1 - axis] = bin_center[1 - axis]
-        desired_center[axis] = bin_center[axis] + direction * (
-            bin_half_extent - bottle_half_extent + self.config.rim_hit_penetration
-        )
+        if self.config.rim_hit_side_collision:
+            # Approach from outside with the bottle deliberately below the rim.
+            # The near-side variant always uses the wall facing the robots;
+            # other episodes use a deterministic random outer wall.
+            if bool(plan["rim_hit_near_side"]):
+                axis, direction = 1, -1.0
+                bin_half_extent = float(self.config.drop_validation_half_extents[axis])
+                bottle_half_extent = float(np.max(np.abs(corners[:, axis] - center[axis])))
+            desired_center[1 - axis] = bin_center[1 - axis]
+            desired_center[axis] = bin_center[axis] + direction * (
+                bin_half_extent + bottle_half_extent - self.config.rim_hit_penetration
+            )
+        else:
+            desired_center[axis] = bin_center[axis] + direction * (
+                bin_half_extent - bottle_half_extent + self.config.rim_hit_penetration
+            )
         arm_position = desired_center - self._grasp_relative_position
         dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, self.config.dustbin_fallback_half_height)
         contact = arm_position.copy()
-        contact[2] = dustbin_top + self._grasp_to_bottom + self.config.rim_hit_clearance
-        approach = contact.copy()
-        approach[2] += self.config.rim_hit_approach_height
+        if self.config.rim_hit_side_collision:
+            contact[2] = dustbin_top + self._grasp_to_bottom - self.config.rim_hit_underlift
+            approach = contact.copy()
+            approach[axis] += direction * self.config.rim_hit_side_approach_distance
+        else:
+            contact[2] = dustbin_top + self._grasp_to_bottom + self.config.rim_hit_clearance
+            approach = contact.copy()
+            approach[2] += self.config.rim_hit_approach_height
         low = np.asarray(self.config.workspace_min) + 0.02
         high = np.asarray(self.config.workspace_max) - 0.02
         self._rim_hit_contact_target = Pose(np.clip(contact, low, high), self._carry_orientation)
         self._rim_hit_approach_target = Pose(np.clip(approach, low, high), self._carry_orientation)
+
+    def _active_failure_mode(self) -> str:
+        if self._active_bottle is None:
+            return "none"
+        return str(self._skill_plans.get(self._active_bottle, {}).get("failure_mode", "none"))
 
     def _initial_feedback_stage(self) -> str:
         return "push_rise" if self._active_skill == "push" else "rise"
@@ -1502,8 +1594,14 @@ class BottleController:
         rng = np.random.default_rng(np.random.SeedSequence([self.trajectory_variant, 0xB0771E, *layout_words]))
         plans: dict[str, dict[str, Any]] = {}
         for index, label in enumerate(bottle_order):
+            failure_mode = "none"
+            if self.config.failure_mode == "cycle" and index == 0:
+                failure_mode = ("prebin_drop", "rim_collision", "missed_grasp")[self.trajectory_variant % 3]
             push = bool(
-                self.config.world_model_movements and index == 0 and rng.random() < self.config.push_probability
+                self.config.world_model_movements
+                and failure_mode == "none"
+                and index == 0
+                and rng.random() < self.config.push_probability
             )
             hold_steps = (
                 int(rng.integers(self.config.hold_steps_min, self.config.hold_steps_max + 1))
@@ -1548,6 +1646,7 @@ class BottleController:
                 # was interrupted, instead of cutting directly to the bin.
                 mid_pick_offsets.append((0.0, 0.0, 0.0))
             plans[label] = {
+                "failure_mode": failure_mode,
                 "push": push,
                 # Positive table Y points away from the robots and toward the
                 # work area/bin in RoboDojo's bottle task.
@@ -1570,10 +1669,16 @@ class BottleController:
                     self.config.world_model_movements and not push and rng.random() < self.config.regrasp_probability
                 ),
                 "rim_hit": bool(
-                    self.config.world_model_movements and not push and rng.random() < self.config.rim_hit_probability
+                    failure_mode == "rim_collision"
+                    or (
+                        self.config.world_model_movements
+                        and not push
+                        and rng.random() < self.config.rim_hit_probability
+                    )
                 ),
                 "rim_hit_axis": int(rng.integers(0, 2)),
                 "rim_hit_direction": 1.0 if rng.random() < 0.5 else -1.0,
+                "rim_hit_near_side": bool(rng.random() < self.config.rim_hit_near_side_probability),
             }
         return plans
 

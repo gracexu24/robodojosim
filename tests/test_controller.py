@@ -11,7 +11,15 @@ from robodojosim.types import ObjectState, Pose
 
 def test_production_profiles_use_physically_calibrated_left_grasp_center():
     config_root = Path(__file__).parents[1] / "configs"
-    for name in ("bottle_task.json", "policy_data.json", "world_model_data.json", "world_model_showcase.json"):
+    for name in (
+        "bottle_task.json",
+        "policy_data.json",
+        "world_model_data.json",
+        "world_model_showcase.json",
+        "world_model_success_data.json",
+        "world_model_failure_data.json",
+        "world_model_misc_data.json",
+    ):
         config = ControllerConfig.from_json(config_root / name)
         assert config.left_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
@@ -838,3 +846,41 @@ def test_forward_push_moves_away_from_robots_along_table_y():
     assert controller._push_start is not None
     assert controller._push_end is not None
     assert controller._push_end.position[1] > controller._push_start.position[1]
+
+
+def test_failure_profile_cycles_requested_recoverable_events():
+    config = ControllerConfig.from_json(Path(__file__).parents[1] / "configs" / "world_model_failure_data.json")
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    modes = []
+    for variant in range(3):
+        controller = BottleController(config, trajectory_variant=variant)
+        controller.reset(snapshot)
+        first = controller._feedback_queue[0]
+        modes.append(controller._skill_plans[first]["failure_mode"])
+    assert modes == ["prebin_drop", "rim_collision", "missed_grasp"]
+
+
+def test_side_collision_is_outside_bin_and_deliberately_underlifted():
+    config = ControllerConfig.from_json(Path(__file__).parents[1] / "configs" / "world_model_failure_data.json")
+    snapshot = MockBottleEnv(seed=0).snapshot()
+    controller = BottleController(config, trajectory_variant=1)
+    controller.reset(snapshot)
+    controller._active_bottle = controller._feedback_queue[0]
+    controller._active_arm = "left"
+    controller._carry_orientation = snapshot.arms["left"].quaternion
+    controller._grasp_relative_position = np.array([0.0, 0.0, 0.05])
+    controller._grasp_to_bottom = 0.08
+    controller._prepare_rim_hit_targets(snapshot)
+
+    contact = controller._rim_hit_contact_target
+    approach = controller._rim_hit_approach_target
+    assert contact is not None and approach is not None
+    bin_center = snapshot.dustbin.pose.position
+    outside_x = abs(contact.position[0] - bin_center[0]) > config.drop_validation_half_extents[0]
+    outside_y = abs(contact.position[1] - bin_center[1]) > config.drop_validation_half_extents[1]
+    assert outside_x or outside_y
+    dustbin_top = bbox_top(snapshot.dustbin.pose, snapshot.dustbin.bbox, config.dustbin_fallback_half_height)
+    assert contact.position[2] == pytest.approx(
+        dustbin_top + controller._grasp_to_bottom - config.rim_hit_underlift
+    )
+    assert np.linalg.norm(approach.position[:2] - contact.position[:2]) > 0.05

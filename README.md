@@ -202,11 +202,34 @@ both bottles in the bin.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
 hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle forward along the tabletop,
 holds another aloft for a variable interval, carries it through two to five safe waypoints, sometimes sets it down and
-regrasps it, and sometimes makes a bounded held-bottle contact with the inner bin rim. It can also pause an active
+regrasps it, and sometimes makes a bounded insufficient-lift contact with an outer bin wall. It can also pause an active
 pick/place transfer, follow one to three additional random waypoints, return to the interrupted route, and finish the
 placement. Task reward is not required for those deliberately exploratory episodes. Each pass gets a new episode-ID
 range and deterministic trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard
 decoder.
+
+For an equal-duration success/failure-event/miscellaneous corpus, use the balanced collector. A one-hour run creates
+three independent 20-minute datasets and LeRobot exports:
+
+```bash
+conda run -n RoboDojoPolicy robodojosim balanced-world-model \
+  --xpolicylab /workspace/RoboDojo/XPolicyLab \
+  --output /workspace/datasets/bottle-world-balanced-1h \
+  --target-hours 1
+```
+
+`success/` counts only successful two-bottle placements. `failure/` cycles a recoverable pre-bin drop, an
+under-lifted outer-bin-wall collision (near wall and randomized walls), and a deliberately missed initial grasp
+followed by closed-loop recovery. `miscellaneous/` uses the complete randomized skill library.
+
+Every HDF5 frame already stores `teacher/bottle0_pose` and `teacher/bottle1_pose`. Export every-frame XYZ data and
+the distribution plots after collection:
+
+```bash
+robodojosim analyze-bottle-poses \
+  --dataset /workspace/datasets/bottle-world-balanced-1h \
+  --output /workspace/datasets/bottle-world-balanced-1h/pose-analysis
+```
 
 For a short labeled demonstration containing every world-model skill, run one episode with
 `configs/world_model_showcase.json`, then render its teacher annotations:

@@ -106,3 +106,21 @@ def test_export_lerobot_includes_failed_complete_world_model_episode(tmp_path):
         )
         == output
     )
+
+
+def test_success_world_model_export_filters_failed_attempts(tmp_path):
+    _write_episode(tmp_path, 0, success=True, profile="world_model_success")
+    _write_episode(tmp_path, 1, success=False, profile="world_model_success")
+    made = []
+
+    def factory(**kwargs):
+        made.append(FakeLeRobotDataset(**kwargs))
+        return made[-1]
+
+    export_lerobot(
+        tmp_path,
+        tmp_path / "lerobot",
+        profile="world_model_success",
+        dataset_factory=factory,
+    )
+    assert len(made[0].episodes) == 1

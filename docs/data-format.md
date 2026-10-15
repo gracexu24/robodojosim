@@ -31,6 +31,11 @@ group into its policy observation. Recommended training inputs are:
 
 Recommended targets are `action/*`.
 
+Balanced campaigns store the category in `metadata_json.collection_profile` as `world_model_success`,
+`world_model_failure`, or `world_model_misc`. `robodojosim analyze-bottle-poses` reads the existing per-frame bottle
+pose arrays and writes an every-frame XYZ CSV, category-specific top-down heatmaps, and a combined XYZ time-series
+plot.
+
 ## Filtering
 
 Use `manifest.json` as the episode index. Train only on entries where `success` is true unless deliberately building

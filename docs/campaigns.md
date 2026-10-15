@@ -31,7 +31,7 @@ RoboDojo's current public bottle task supplies 25 deterministic layout IDs. Camp
 - a randomized push on the first selected bottle in most episodes;
 - a variable airborne hold and two to five randomized carry waypoints for a grasped bottle.
 - a randomized set-down and closed-loop regrasp before the bottle is carried to the bin.
-- a bounded held-bottle contact against a randomly selected inner bin rim.
+- a bounded insufficient-lift held-bottle contact against the near or a randomized outer bin wall.
 
 Every skill reads the current simulator object and robot poses on every control step. Randomness selects a deterministic
 skill program for a layout/trajectory variant; it does not replace feedback with memorized joint trajectories. The
@@ -46,6 +46,20 @@ handoff scene cannot be enabled accidentally through a stale `ROBODOJOSIM_TWO_BO
 `configs/world_model_showcase.json` inherits the calibrated six-hour profile and forces one forward push plus hold,
 carry, mid-pick waypoint interruption, regrasp, rim-hit, and pick/place motions into a single two-bottle episode. Use `robodojosim render-skill-video` to
 turn its recorded head camera and `teacher/skill` annotations into a labeled MP4 for inspection.
+
+## Balanced world-model corpus
+
+`robodojosim balanced-world-model --target-hours 1 ...` produces three separate sub-datasets with 1,200 seconds of
+eligible recorded interaction each:
+
+- `success`: normal closed-loop task runs; only final task successes count toward the quota and LeRobot export.
+- `failure`: scripted failure events with recovery—pre-bin drop, insufficient-lift side/rim collision, and missed
+  initial grasp—cycled deterministically by trajectory variant.
+- `miscellaneous`: randomized pushes, holds, carry waypoints, mid-pick pauses/waypoints, regrasp, side/rim contacts,
+  and ordinary pick/place transitions.
+
+The failure label describes the injected event, not necessarily the final reward: recovery may still complete the
+task. All source files retain per-frame bottle and bin poses under `/teacher`.
 
 This creates useful action and interaction variation, but initial bottle/object scenes still come from those 25
 layouts. Six hours therefore contains repeated initial configurations. Broader world-model pretraining should mix in

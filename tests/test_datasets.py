@@ -69,6 +69,9 @@ def test_campaign_targets_and_dry_run(tmp_path, capsys):
     policy = campaign_target("policy", target_episodes=50)
     assert not world.reached(stats)
     assert policy.remaining_batch_size(stats, 25) == 25
+    balanced_success = campaign_target("world_model_success", target_hours=1 / 3)
+    assert balanced_success.successful_seconds_only is True
+    assert balanced_success.target_seconds == 1200
 
     run_campaign(
         profile="policy",

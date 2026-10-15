@@ -1,0 +1,58 @@
+import csv
+import json
+
+from robodojosim.mock_env import MockBottleEnv
+from robodojosim.pose_analysis import analyze_pose_distribution
+from robodojosim.recording import EpisodeRecorder
+from robodojosim.robodojo_adapter import teacher_frame
+
+
+def test_pose_analysis_exports_every_frame_and_distribution_plots(tmp_path):
+    profiles = {
+        "success": "world_model_success",
+        "failure": "world_model_failure",
+        "miscellaneous": "world_model_misc",
+    }
+    for episode, (category, profile) in enumerate(profiles.items()):
+        env = MockBottleEnv(seed=episode)
+        snapshot = env.snapshot()
+        recorder = EpisodeRecorder(
+            tmp_path / category,
+            episode,
+            seed=episode,
+            instruction="test",
+            metadata={"collection_profile": profile, "layout_seed": episode},
+        )
+        action = {
+            "left_ee_pose": snapshot.arms["left"].as_array(),
+            "right_ee_pose": snapshot.arms["right"].as_array(),
+            "left_ee_joint_state": [1.0],
+            "right_ee_joint_state": [1.0],
+        }
+        for frame in range(2):
+            recorder.append(
+                env.observation(),
+                action,
+                teacher=teacher_frame(snapshot, "test", "bottle0", "left", "pick_place"),
+            )
+            if frame == 0:
+                env.bottles["bottle0"].state = env.bottles["bottle0"].state.__class__(
+                    env.bottles["bottle0"].state.pose.at(
+                        env.bottles["bottle0"].state.pose.position + [0.01, 0.0, 0.0]
+                    ),
+                    env.bottles["bottle0"].state.bbox,
+                )
+                snapshot = env.snapshot()
+        recorder.close(success=category == "success")
+
+    output = tmp_path / "analysis"
+    summary = analyze_pose_distribution(tmp_path, output)
+    assert set(summary["categories"]) == set(profiles)
+    assert all(summary["categories"][category]["frames_per_bottle"] == 2 for category in profiles)
+    with (output / "bottle_positions_every_frame.csv").open() as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 12
+    assert {row["bottle"] for row in rows} == {"bottle0", "bottle1"}
+    assert (output / "all_bottle_xyz_positions.png").stat().st_size > 0
+    assert all((output / f"{category}_bottle_xy_heatmap.png").stat().st_size > 0 for category in profiles)
+    assert json.loads((output / "pose_distribution_summary.json").read_text())["format_version"] == 1

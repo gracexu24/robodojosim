@@ -11,7 +11,7 @@ from typing import Any
 import h5py
 import numpy as np
 
-from .datasets import EpisodeInfo, list_episodes
+from .datasets import EpisodeInfo, episode_is_eligible, list_episodes
 from .image_codec import decode_jpeg
 
 STATE_NAMES = [
@@ -36,7 +36,7 @@ STATE_NAMES = [
 
 def _eligible_episodes(dataset_dir: Path, profile: str | None) -> list[EpisodeInfo]:
     records, _ = list_episodes(dataset_dir, profile=profile)
-    return [record for record in records if record.complete and (record.success or profile != "policy")]
+    return [record for record in records if episode_is_eligible(record, profile)]
 
 
 def _read_text(dataset: h5py.Dataset) -> str:

@@ -1,0 +1,20 @@
+{
+  "extends": "policy_data.json",
+  "world_model_movements": true,
+  "failure_mode": "cycle",
+  "intentional_miss_offset": 0.12,
+  "prebin_drop_hold_steps": 8,
+  "hold_steps_min": 4,
+  "hold_steps_max": 4,
+  "carry_waypoints_min": 0,
+  "carry_waypoints_max": 0,
+  "mid_pick_waypoint_probability": 0.0,
+  "regrasp_probability": 0.0,
+  "rim_hit_probability": 0.0,
+  "rim_hit_penetration": 0.008,
+  "rim_hit_hold_steps": 6,
+  "rim_hit_side_collision": true,
+  "rim_hit_underlift": 0.05,
+  "rim_hit_side_approach_distance": 0.08,
+  "rim_hit_near_side_probability": 0.5
+}

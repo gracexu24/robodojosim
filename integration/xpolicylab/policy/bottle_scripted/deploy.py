@@ -43,7 +43,9 @@ def eval_one_episode(TASK_ENV, model_client):
     if not record_episode:
         print("[bottle_scripted] recording disabled for this calibration run")
     elif EpisodeRecorder.is_complete(
-        output_dir, episode_id, require_success=collection_profile != "world_model"
+        output_dir,
+        episode_id,
+        require_success=collection_profile in {"policy", "world_model_success"},
     ):
         print(f"[bottle_scripted] episode {episode_id} already recorded; executing without overwriting it")
     else:

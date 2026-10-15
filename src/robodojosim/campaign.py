@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .datasets import DatasetStats, summarize_dataset, write_splits
+from .datasets import DatasetStats, WORLD_MODEL_PROFILES, summarize_dataset, write_splits
 from .lerobot_export import export_lerobot
 
 
@@ -17,21 +17,29 @@ class CampaignTarget:
     profile: str
     target_episodes: int | None
     target_seconds: float | None
+    successful_seconds_only: bool = False
+
+    def progress_seconds(self, stats: DatasetStats) -> float:
+        return stats.successful_seconds if self.successful_seconds_only else stats.complete_seconds
+
+    def progress_episodes(self, stats: DatasetStats) -> int:
+        return stats.successful_episodes if self.successful_seconds_only else stats.complete_episodes
 
     def reached(self, stats: DatasetStats) -> bool:
         if self.target_episodes is not None:
             return stats.successful_episodes >= self.target_episodes
         assert self.target_seconds is not None
-        return stats.complete_seconds >= self.target_seconds
+        return self.progress_seconds(stats) >= self.target_seconds
 
     def remaining_batch_size(self, stats: DatasetStats, maximum: int) -> int:
         if self.target_episodes is not None:
             return max(1, min(maximum, self.target_episodes - stats.successful_episodes))
         assert self.target_seconds is not None
-        remaining = self.target_seconds - stats.complete_seconds
-        if stats.mean_complete_seconds <= 0:
+        remaining = self.target_seconds - self.progress_seconds(stats)
+        mean_seconds = stats.mean_successful_seconds if self.successful_seconds_only else stats.mean_complete_seconds
+        if mean_seconds <= 0:
             return maximum
-        return max(1, min(maximum, math.ceil(remaining / stats.mean_complete_seconds)))
+        return max(1, min(maximum, math.ceil(remaining / mean_seconds)))
 
 
 def campaign_target(profile: str, *, target_episodes: int = 50, target_hours: float = 6.0) -> CampaignTarget:
@@ -39,10 +47,15 @@ def campaign_target(profile: str, *, target_episodes: int = 50, target_hours: fl
         if target_episodes < 1:
             raise ValueError("target_episodes must be positive")
         return CampaignTarget(profile, target_episodes, None)
-    if profile == "world_model":
+    if profile in WORLD_MODEL_PROFILES:
         if target_hours <= 0:
             raise ValueError("target_hours must be positive")
-        return CampaignTarget(profile, None, target_hours * 3600.0)
+        return CampaignTarget(
+            profile,
+            None,
+            target_hours * 3600.0,
+            successful_seconds_only=profile == "world_model_success",
+        )
     raise ValueError(f"unknown campaign profile: {profile}")
 
 
@@ -192,13 +205,16 @@ def run_campaign(
             )
             return stats
 
-        before_progress = stats.successful_episodes if profile == "policy" else stats.complete_episodes
+        before_progress = (
+            stats.successful_episodes if profile == "policy" else target.progress_episodes(stats)
+        )
         subprocess.run(command, env=environment, check=True)
         updated = summarize_dataset(output, profile=profile)
         state["next_pass"] = pass_index + 1
         state["no_progress_passes"] = (
             int(state.get("no_progress_passes", 0)) + 1
-            if (updated.successful_episodes if profile == "policy" else updated.complete_episodes) == before_progress
+            if (updated.successful_episodes if profile == "policy" else target.progress_episodes(updated))
+            == before_progress
             else 0
         )
         state["status"] = "running"
@@ -235,3 +251,56 @@ def _export_campaign_lerobot(output: Path, profile: str, *, lerobot_env: str | N
         )
         return destination
     return export_lerobot(output, destination, profile=profile, repo_id=repo_id, overwrite=True)
+
+
+def run_balanced_world_model_campaign(
+    *,
+    xpolicylab: str | Path,
+    policy_env: str,
+    eval_env: str,
+    output: str | Path,
+    total_hours: float = 6.0,
+    policy_seed: int = 0,
+    runner: str | Path | None = None,
+    batch_size: int = 25,
+    max_passes: int | None = None,
+    lerobot_env: str | None = "RoboDojoLeRobot",
+    dry_run: bool = False,
+) -> dict[str, DatasetStats]:
+    """Collect equal recorded-time success, failure-event, and miscellaneous datasets."""
+
+    if total_hours <= 0:
+        raise ValueError("total_hours must be positive")
+    root = Path(output).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    per_category_hours = total_hours / 3.0
+    categories = (
+        ("success", "world_model_success"),
+        ("failure", "world_model_failure"),
+        ("miscellaneous", "world_model_misc"),
+    )
+    results: dict[str, DatasetStats] = {}
+    for index, (directory, profile) in enumerate(categories):
+        results[directory] = run_campaign(
+            profile=profile,
+            xpolicylab=xpolicylab,
+            policy_env=policy_env,
+            eval_env=eval_env,
+            output=root / directory,
+            policy_seed=policy_seed + index,
+            runner=runner,
+            target_hours=per_category_hours,
+            batch_size=batch_size,
+            max_passes=max_passes,
+            lerobot_env=lerobot_env,
+            dry_run=dry_run,
+        )
+    if not dry_run:
+        payload = {
+            "format_version": 1,
+            "target_total_hours": total_hours,
+            "target_hours_per_category": per_category_hours,
+            "categories": {name: stats.to_dict() for name, stats in results.items()},
+        }
+        _save_state(root / "balanced_campaign_state.json", payload)
+    return results

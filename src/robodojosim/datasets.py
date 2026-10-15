@@ -11,6 +11,24 @@ from typing import Any
 import h5py
 
 
+WORLD_MODEL_PROFILES = (
+    "world_model",
+    "world_model_success",
+    "world_model_failure",
+    "world_model_misc",
+)
+
+
+def is_world_model_profile(profile: str | None) -> bool:
+    return profile in WORLD_MODEL_PROFILES
+
+
+def episode_is_eligible(record: EpisodeInfo, profile: str | None) -> bool:
+    if not record.complete:
+        return False
+    return record.success or profile not in {"policy", "world_model_success"}
+
+
 @dataclass(frozen=True)
 class EpisodeInfo:
     path: Path
@@ -132,7 +150,7 @@ def write_splits(
         raise ValueError("ratios must satisfy train > 0, validation >= 0, and train + validation < 1")
     dataset_dir = Path(dataset_dir)
     records, _ = list_episodes(dataset_dir, profile=profile)
-    eligible = [record for record in records if record.complete and (record.success or profile == "world_model")]
+    eligible = [record for record in records if episode_is_eligible(record, profile)]
     if not eligible:
         raise ValueError("dataset contains no eligible complete episodes")
 

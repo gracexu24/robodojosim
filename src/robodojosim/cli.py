@@ -4,14 +4,15 @@ import argparse
 import json
 from pathlib import Path
 
-from .campaign import run_campaign
+from .campaign import run_balanced_world_model_campaign, run_campaign
 from .controller import BottleController, ControllerConfig
-from .datasets import summarize_dataset, write_splits
+from .datasets import WORLD_MODEL_PROFILES, summarize_dataset, write_splits
 from .evaluation import EvaluationSpec, run_evaluation, summarize_evaluation
 from .hub import format_push_plan, push_dataset, push_model
 from .layouts import centralize_dustbin, normalize_bottle_mass
 from .lerobot_export import export_lerobot
 from .mock_env import MockBottleEnv
+from .pose_analysis import analyze_pose_distribution
 from .recording import EpisodeRecorder, validate_episode
 from .showcase import render_skill_video
 from .training import TrainingSpec, inspect_lerobot_dataset, run_training
@@ -133,6 +134,25 @@ def _campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def _balanced_campaign(args: argparse.Namespace) -> int:
+    results = run_balanced_world_model_campaign(
+        xpolicylab=args.xpolicylab,
+        policy_env=args.policy_env,
+        eval_env=args.eval_env,
+        output=args.output,
+        total_hours=args.target_hours,
+        policy_seed=args.policy_seed,
+        runner=args.runner,
+        batch_size=args.batch_size,
+        max_passes=args.max_passes,
+        lerobot_env=args.lerobot_env or None,
+        dry_run=args.dry_run,
+    )
+    if not args.dry_run:
+        print(json.dumps({name: stats.to_dict() for name, stats in results.items()}, indent=2))
+    return 0
+
+
 def _fix_layouts(args: argparse.Namespace) -> int:
     changed = normalize_bottle_mass(args.robodojo_root, dry_run=args.dry_run)
     dustbins = (
@@ -246,6 +266,11 @@ def _render_skill_video(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analyze_poses(args: argparse.Namespace) -> int:
+    print(json.dumps(analyze_pose_distribution(args.dataset, args.output), indent=2, sort_keys=True))
+    return 0
+
+
 def _push_dataset(args: argparse.Namespace) -> int:
     result = push_dataset(
         args.dataset,
@@ -289,7 +314,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.set_defaults(func=_plan)
     report = subparsers.add_parser("report", help="summarize complete and successful dataset duration")
     report.add_argument("--dataset", required=True)
-    report.add_argument("--profile", choices=("policy", "world_model"))
+    profiles = ("policy", *WORLD_MODEL_PROFILES)
+    report.add_argument("--profile", choices=profiles)
     report.add_argument(
         "--field",
         choices=(
@@ -311,13 +337,13 @@ def build_parser() -> argparse.ArgumentParser:
     split = subparsers.add_parser("split", help="create layout-grouped train/validation/test splits")
     split.add_argument("--dataset", required=True)
     split.add_argument("--output")
-    split.add_argument("--profile", choices=("policy", "world_model"))
+    split.add_argument("--profile", choices=profiles)
     split.add_argument("--seed", type=int, default=0)
     split.add_argument("--train-ratio", type=float, default=0.8)
     split.add_argument("--validation-ratio", type=float, default=0.1)
     split.set_defaults(func=_split)
     campaign = subparsers.add_parser("campaign", help="collect until a policy-episode or world-model-hour quota")
-    campaign.add_argument("--profile", required=True, choices=("policy", "world_model"))
+    campaign.add_argument("--profile", required=True, choices=profiles)
     campaign.add_argument("--xpolicylab", required=True)
     campaign.add_argument("--policy-env", default="RoboDojoPolicy")
     campaign.add_argument("--eval-env", default="RoboDojo")
@@ -336,6 +362,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     campaign.add_argument("--dry-run", action="store_true")
     campaign.set_defaults(func=_campaign)
+    balanced = subparsers.add_parser(
+        "balanced-world-model",
+        help="collect equal recorded time in success, recoverable-failure, and miscellaneous datasets",
+    )
+    balanced.add_argument("--xpolicylab", required=True)
+    balanced.add_argument("--policy-env", default="RoboDojoPolicy")
+    balanced.add_argument("--eval-env", default="RoboDojo")
+    balanced.add_argument("--output", required=True)
+    balanced.add_argument("--policy-seed", type=int, default=0)
+    balanced.add_argument("--runner")
+    balanced.add_argument("--target-hours", type=float, default=6.0)
+    balanced.add_argument("--batch-size", type=int, default=25)
+    balanced.add_argument("--max-passes", type=int)
+    balanced.add_argument("--lerobot-env", default="RoboDojoLeRobot")
+    balanced.add_argument("--dry-run", action="store_true")
+    balanced.set_defaults(func=_balanced_campaign)
+    poses = subparsers.add_parser(
+        "analyze-bottle-poses",
+        help="export every-frame bottle positions and render balanced-campaign distribution plots",
+    )
+    poses.add_argument("--dataset", required=True)
+    poses.add_argument("--output", required=True)
+    poses.set_defaults(func=_analyze_poses)
     layouts = subparsers.add_parser("fix-layouts", help="correct the known 22 kg bottle layout typo")
     layouts.add_argument("--robodojo-root", required=True)
     layouts.add_argument(
@@ -354,7 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
     lerobot = subparsers.add_parser("export-lerobot", help="convert complete episodes to LeRobotDataset v3.0")
     lerobot.add_argument("--dataset", required=True)
     lerobot.add_argument("--output")
-    lerobot.add_argument("--profile", choices=("policy", "world_model"))
+    lerobot.add_argument("--profile", choices=profiles)
     lerobot.add_argument("--repo-id", default="robodojosim/bottle-task")
     lerobot.add_argument("--overwrite", action="store_true")
     lerobot.set_defaults(func=_export_lerobot)
