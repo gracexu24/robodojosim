@@ -115,6 +115,26 @@ def test_workspace_guard_rejects_unsafe_target():
         BottleController(ControllerConfig()).reset(unsafe)
 
 
+def test_recovery_grasp_is_clamped_inside_workspace_after_wall_contact():
+    env = MockBottleEnv()
+    snapshot = env.snapshot()
+    bottles = dict(snapshot.bottles)
+    first = bottles["bottle0"]
+    bottles["bottle0"] = type(first)(Pose([-0.08, -0.551, 0.8], [1, 0, 0, 0]), first.bbox)
+    displaced = type(snapshot)(snapshot.arms, snapshot.grippers, bottles, snapshot.dustbin)
+    controller = BottleController(ControllerConfig(live_pose_feedback=True))
+    controller.reset(snapshot)
+    controller._active_bottle = "bottle0"
+    controller._active_arm = "left"
+    controller._recovering = True
+
+    grasp, pregrasp, _ = controller._live_grasp_poses(displaced)
+
+    assert grasp.position[1] == pytest.approx(controller.config.workspace_min[1] + 0.005)
+    assert pregrasp.position[1] == pytest.approx(grasp.position[1])
+    controller._check_pose(grasp, Phase.GRASP)
+
+
 def test_center_offset_calibration_plan_stops_after_one_lift():
     env = MockBottleEnv(seed=2)
     config = ControllerConfig(

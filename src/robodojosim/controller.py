@@ -1223,6 +1223,16 @@ class BottleController:
                 getattr(self.config, f"{self._active_arm}_horizontal_grasp_position_offset"),
                 dtype=np.float64,
             )
+        if self._recovering:
+            # A deliberate wall collision can leave the bottle a few
+            # millimetres outside the nominal arm workspace.  Keep the
+            # recovery grasp safely inside the boundary instead of turning a
+            # useful failure demonstration into a SafetyError/restart.  The
+            # ordinary first grasp remains unclamped, so genuinely unsafe
+            # scene layouts are still rejected by the workspace guard.
+            low = np.asarray(self.config.workspace_min, dtype=np.float64) + 0.005
+            high = np.asarray(self.config.workspace_max, dtype=np.float64) - 0.005
+            grasp_position = np.clip(grasp_position, low, high)
         orientation = self._orientation(self._active_arm, snapshot)
         if self.config.align_grasp_to_bbox_major_axis:
             orientation = align_tool_yaw_to_bbox_major_axis(orientation, bottle.pose, bottle.bbox)

@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .datasets import DatasetStats, WORLD_MODEL_PROFILES, summarize_dataset, write_splits
+from .datasets import WORLD_MODEL_PROFILES, DatasetStats, summarize_dataset, write_splits
 from .lerobot_export import export_lerobot
 
 

@@ -10,7 +10,6 @@ from typing import Any
 
 import h5py
 
-
 WORLD_MODEL_PROFILES = (
     "world_model",
     "world_model_success",

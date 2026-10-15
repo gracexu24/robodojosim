@@ -10,7 +10,6 @@ import cv2
 import h5py
 import numpy as np
 
-
 CATEGORIES = ("success", "failure", "miscellaneous")
 BOTTLES = ("bottle0", "bottle1")
 
