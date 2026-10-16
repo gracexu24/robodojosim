@@ -157,9 +157,16 @@ class EpisodeRecorder:
                         # 3DWS packed_v2 also stores depth as float16. At this
                         # tabletop range it preserves millimetric precision and
                         # halves the six-hour source corpus before compression.
+                        # Isaac occasionally emits Inf for rays that miss all
+                        # geometry. Store those pixels as zero, the conventional
+                        # invalid-depth sentinel already understood by the 3DWS
+                        # exporter and quality tools, so source episodes remain
+                        # finite and directly consumable.
+                        depth = _as_numpy(value).astype(np.float32, copy=False)
+                        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
                         self._append_value(
                             f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}",
-                            _as_numpy(value).astype(np.float16),
+                            depth.astype(np.float16),
                         )
                     else:
                         self._append_value(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)

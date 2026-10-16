@@ -73,6 +73,24 @@ def test_validator_rejects_nonfinite_numeric_data(tmp_path):
     assert any("contains NaN or Inf" in error for error in validate_episode(path))
 
 
+def test_recorder_replaces_nonfinite_depth_with_invalid_sentinel(tmp_path):
+    env = MockBottleEnv()
+    observation = env.observation()
+    observation["vision"]["cam_head"]["depth"] = np.array(
+        [[0.4, np.inf], [np.nan, -np.inf]], dtype=np.float32
+    )
+    recorder = EpisodeRecorder(tmp_path, 12, seed=0, instruction="test")
+    recorder.append(observation, BottleController().next_action(env.snapshot()).action)
+    path = recorder.close(success=False)
+
+    assert validate_episode(path) == []
+    with h5py.File(path, "r") as handle:
+        np.testing.assert_array_equal(
+            handle["vision/cam_head/depths"][0],
+            np.array([[0.4, 0.0], [0.0, 0.0]], dtype=np.float16),
+        )
+
+
 def test_recorder_flush_interval_is_validated(tmp_path):
     try:
         EpisodeRecorder(tmp_path, 11, seed=0, instruction="test", flush_interval=0)
