@@ -15,6 +15,8 @@ Ubuntu + NVIDIA machine.
 - Normalized gripper control (`1.0` open, `0.0` closed).
 - Simulator-only scene extraction for the configured bottle poses and dustbin pose.
 - Streaming HDF5 recording in XPolicyLab trajectory format.
+- A 3DWS `packed_v2` exporter with metric depth, calibrated moving-camera poses, 14D Cartesian actions, and
+  pose-derived two-bottle label maps.
 - Atomic episode completion, a manifest, validation, and resume-by-episode ID.
 - Quota-driven campaigns for exactly 50 successful policy episodes or at least six complete interaction hours.
 - XPolicyLab-compatible JPEG streams for long-running storage efficiency.
@@ -185,7 +187,8 @@ conda run -n RoboDojo robodojosim campaign \
   --output /workspace/datasets/bottle-policy-50
 ```
 
-Collect at least six hours of complete 25 Hz world-model interactions:
+Collect at least six hours of complete world-model interactions. Control remains at 25 Hz; depth/calibrated frames
+are stored at 10 Hz for the supplied 3DWS training pipeline:
 
 ```bash
 conda run -n RoboDojo robodojosim campaign \
@@ -200,13 +203,16 @@ Campaigns are resumable. Both profiles force the supported brown/yellow two-bott
 exports `ROBODOJOSIM_TWO_BOTTLE_TASK=0`. The policy profile stops at 50 successful episodes, where success requires
 both bottles in the bin.
 The world-model profile stops after all complete interaction frames divided by their recorded frequency reaches six
-hours (540,000 frames at 25 Hz). Its randomized closed-loop repertoire pushes one bottle forward along the tabletop,
+hours (216,000 frames at 10 Hz). Its randomized closed-loop repertoire pushes one bottle forward along the tabletop,
 holds another aloft for a variable interval, carries it through two to five safe waypoints, sometimes sets it down and
 regrasps it, and sometimes makes a bounded insufficient-lift contact with an outer bin wall. It can also pause an active
 pick/place transfer, follow one to three additional random waypoints, return to the interrupted route, and finish the
 placement. Task reward is not required for those deliberately exploratory episodes. Each pass gets a new episode-ID
 range and deterministic trajectory variant. Images use marked JPEG at quality 90, readable by XPolicyLab's standard
-decoder.
+decoder. World-model runs temporarily enable metric depth, intrinsics, and per-frame head/wrist camera poses, then
+restore normal RGB-only settings. Convert source HDF5 with `robodojosim export-3dws`; see
+[docs/3dws-world-model.md](docs/3dws-world-model.md). Historical RGB-only episodes cannot be converted into true 3D
+training data and must be re-recorded.
 
 For an equal-duration success/failure-event/miscellaneous corpus, use the balanced collector. A one-hour run creates
 three independent 20-minute datasets and LeRobot exports:

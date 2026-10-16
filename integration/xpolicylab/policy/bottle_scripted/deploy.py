@@ -34,6 +34,13 @@ def eval_one_episode(TASK_ENV, model_client):
 
     output_dir = Path(os.environ.get("ROBODOJOSIM_DATASET_DIR", "datasets/put_bottles_into_dustbin"))
     collection_profile = os.environ.get("ROBODOJOSIM_COLLECTION_PROFILE", "manual")
+    source_frequency = int(observation.get("additional_info", {}).get("frequency", 25))
+    default_record_frequency = 10 if collection_profile.startswith("world_model") else source_frequency
+    record_frequency = int(os.environ.get("ROBODOJOSIM_RECORD_FREQUENCY", str(default_record_frequency)))
+    if not 0 < record_frequency <= source_frequency:
+        raise ValueError(
+            f"ROBODOJOSIM_RECORD_FREQUENCY must be in [1, {source_frequency}], got {record_frequency}"
+        )
     layout_seed = _seed(TASK_ENV)
     episode_id = layout_seed + int(os.environ.get("ROBODOJOSIM_EPISODE_OFFSET", "0"))
     recorder = None
@@ -55,7 +62,7 @@ def eval_one_episode(TASK_ENV, model_client):
             episode_id,
             seed=layout_seed,
             instruction=snapshot.instruction,
-            frequency=int(observation.get("additional_info", {}).get("frequency", 25)),
+            frequency=record_frequency,
             metadata={
                 "task": "put_bottles_into_dustbin",
                 "controller": "closed_loop_cartesian_v2",
@@ -64,11 +71,15 @@ def eval_one_episode(TASK_ENV, model_client):
                 "collection_profile": collection_profile,
                 "scene_variant": "two_bottle_brown_yellow",
                 "campaign_id": os.environ.get("ROBODOJOSIM_CAMPAIGN_ID", "manual"),
+                "source_frequency": source_frequency,
+                "record_frequency": record_frequency,
+                "world_model_schema": "3dws_packed_v2_source" if collection_profile.startswith("world_model") else "none",
             },
             jpeg_quality=int(jpeg_quality) if jpeg_quality else None,
             flush_interval=int(os.environ.get("ROBODOJOSIM_FLUSH_INTERVAL", "25")),
         )
     reason = "controller_complete"
+    source_step = 0
     try:
         while not TASK_ENV.is_episode_end() and not controller.done:
             snapshot = adapter.snapshot(observation)
@@ -76,7 +87,13 @@ def eval_one_episode(TASK_ENV, model_client):
                 planned = controller.next_action(snapshot)
             except StopIteration:
                 break
-            if recorder is not None:
+            # Decimate only the stored world-model frames; control and feedback
+            # still run at RoboDojo's full observation frequency.
+            record_this_step = source_step == 0 or (
+                source_step * record_frequency // source_frequency
+                > (source_step - 1) * record_frequency // source_frequency
+            )
+            if recorder is not None and record_this_step:
                 recorder.append(
                     observation,
                     planned.action,
@@ -87,8 +104,10 @@ def eval_one_episode(TASK_ENV, model_client):
                         planned.active_arm,
                         str(planned.privileged.get("skill", "pick_place")),
                     ),
+                    timestamp=source_step / source_frequency,
                 )
             TASK_ENV.take_action(planned.action)
+            source_step += 1
             if not TASK_ENV.is_episode_end() and not controller.done:
                 observation = TASK_ENV.get_obs()
 

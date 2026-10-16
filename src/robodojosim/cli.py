@@ -16,6 +16,14 @@ from .pose_analysis import analyze_pose_distribution
 from .recording import EpisodeRecorder, validate_episode
 from .showcase import render_skill_video
 from .training import TrainingSpec, inspect_lerobot_dataset, run_training
+from .world_model_export import (
+    WorldModelExportConfig,
+    export_3dws_dataset,
+    inspect_3dws_episode,
+    validate_3dws_packed,
+)
+from .world_model_qa import analyze_3dws_quality, render_3dws_review
+from .world_model_setup import configure_world_model_observations
 
 
 def _dry_run(args: argparse.Namespace) -> int:
@@ -189,6 +197,76 @@ def _export_lerobot(args: argparse.Namespace) -> int:
     )
     print(output)
     return 0
+
+
+def _world_model_config(args: argparse.Namespace) -> WorldModelExportConfig:
+    return WorldModelExportConfig(
+        bbox=tuple(args.bbox),
+        target_fps=args.target_fps,
+        jpeg_quality=args.jpeg_quality,
+        source_extrinsic=args.source_extrinsic,
+        source_camera_axes=args.source_camera_axes,
+        object_mask_margin=args.object_mask_margin,
+        require_object_masks=not args.geometry_only,
+    )
+
+
+def _inspect_3dws(args: argparse.Namespace) -> int:
+    paths: list[Path] = []
+    for name in args.paths:
+        candidate = Path(name)
+        paths.extend(sorted(candidate.glob("episode_*.hdf5")) if candidate.is_dir() else [candidate])
+    reports = [inspect_3dws_episode(path).to_dict() for path in paths]
+    print(json.dumps(reports, indent=2, sort_keys=True))
+    return int(not reports or any(not report["compatible"] for report in reports))
+
+
+def _export_3dws(args: argparse.Namespace) -> int:
+    output = export_3dws_dataset(args.dataset, args.output, _world_model_config(args))
+    print(output)
+    return 0
+
+
+def _validate_3dws(args: argparse.Namespace) -> int:
+    failed = False
+    paths: list[Path] = []
+    for name in args.paths:
+        candidate = Path(name)
+        paths.extend(sorted(candidate.glob("**/episode_*.hdf5")) if candidate.is_dir() else [candidate])
+    for path in paths:
+        errors = validate_3dws_packed(path)
+        print(f"{path}: {'OK' if not errors else '; '.join(errors)}")
+        failed = failed or bool(errors)
+    return int(failed or not paths)
+
+
+def _configure_world_model(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            configure_world_model_observations(
+                args.robodojo_root,
+                restore=args.restore,
+                dry_run=args.dry_run,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _review_3dws(args: argparse.Namespace) -> int:
+    report = analyze_3dws_quality(args.episode)
+    video = render_3dws_review(
+        args.episode,
+        args.output,
+        fps=args.fps,
+        maximum_frames=args.maximum_frames,
+    )
+    report_path = Path(args.report) if args.report else Path(args.output).with_suffix(".quality.json")
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"video": str(video), "report": str(report_path), **report}, indent=2, sort_keys=True))
+    return int(not report["passed"])
 
 
 def _episode_indices(value: str | None) -> tuple[int, ...] | None:
@@ -407,6 +485,53 @@ def build_parser() -> argparse.ArgumentParser:
     lerobot.add_argument("--repo-id", default="robodojosim/bottle-task")
     lerobot.add_argument("--overwrite", action="store_true")
     lerobot.set_defaults(func=_export_lerobot)
+    wm_setup = subparsers.add_parser(
+        "configure-world-model-observations",
+        help="enable or restore RoboDojo metric depth and camera calibration capture",
+    )
+    wm_setup.add_argument("--robodojo-root", required=True)
+    wm_setup.add_argument("--restore", action="store_true")
+    wm_setup.add_argument("--dry-run", action="store_true")
+    wm_setup.set_defaults(func=_configure_world_model)
+    inspect_3dws = subparsers.add_parser(
+        "inspect-3dws",
+        help="report whether source episodes contain the geometry needed by 3DWS",
+    )
+    inspect_3dws.add_argument("paths", nargs="+")
+    inspect_3dws.set_defaults(func=_inspect_3dws)
+    export_3dws = subparsers.add_parser(
+        "export-3dws",
+        help="convert enhanced RoboDojo HDF5 episodes to the 3DWS packed_v2 contract",
+    )
+    export_3dws.add_argument("--dataset", required=True)
+    export_3dws.add_argument("--output", required=True)
+    export_3dws.add_argument(
+        "--bbox",
+        required=True,
+        nargs=6,
+        type=float,
+        metavar=("XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"),
+    )
+    export_3dws.add_argument("--target-fps", type=float, default=10.0)
+    export_3dws.add_argument("--jpeg-quality", type=int, default=95)
+    export_3dws.add_argument("--source-extrinsic", choices=("camera_to_world", "world_to_camera"), default="camera_to_world")
+    export_3dws.add_argument("--source-camera-axes", choices=("isaac_usd", "opencv"), default="isaac_usd")
+    export_3dws.add_argument("--object-mask-margin", type=float, default=0.005)
+    export_3dws.add_argument("--geometry-only", action="store_true", help="allow a pack without object labels")
+    export_3dws.set_defaults(func=_export_3dws)
+    validate_3dws = subparsers.add_parser("validate-3dws", help="validate one or more packed_v2 episode files")
+    validate_3dws.add_argument("paths", nargs="+")
+    validate_3dws.set_defaults(func=_validate_3dws)
+    review_3dws = subparsers.add_parser(
+        "review-3dws",
+        help="run numerical quality gates and render an RGB/depth/mask review video",
+    )
+    review_3dws.add_argument("--episode", required=True)
+    review_3dws.add_argument("--output", required=True)
+    review_3dws.add_argument("--report")
+    review_3dws.add_argument("--fps", type=float)
+    review_3dws.add_argument("--maximum-frames", type=int, default=600)
+    review_3dws.set_defaults(func=_review_3dws)
     inspect_dataset = subparsers.add_parser("inspect-lerobot", help="validate a local training-facing LeRobot tree")
     inspect_dataset.add_argument("--dataset", required=True)
     inspect_dataset.set_defaults(func=_inspect_lerobot)

@@ -146,4 +146,6 @@ def teacher_frame(
     }
     for label, bottle_state in snapshot.bottles.items():
         result[f"{label}_pose"] = bottle_state.pose.as_array()
+        if bottle_state.bbox is not None:
+            result[f"{label}_bbox"] = np.asarray(bottle_state.bbox, dtype=np.float32)
     return result

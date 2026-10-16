@@ -33,6 +33,15 @@ _PLURAL_KEYS = {
     "base_twist": "base_twists",
     "color": "colors",
     "depth": "depths",
+    "approximate_depth": "approximate_depths",
+    "distance_to_image_plane": "distance_to_image_planes",
+    "extrinsic_matrix": "extrinsic_matrices",
+    "extrinsics_matrix": "extrinsic_matrices",
+    "object_mask": "object_masks",
+    "object_label": "object_labels",
+    "semantic_segmentation": "semantic_segmentations",
+    "instance_segmentation_fast": "instance_segmentations",
+    "instance_id_segmentation_fast": "instance_id_segmentations",
 }
 
 
@@ -68,6 +77,9 @@ class EpisodeRecorder:
         if jpeg_quality is not None and not 1 <= jpeg_quality <= 100:
             raise ValueError("jpeg_quality must be between 1 and 100")
         self.jpeg_quality = jpeg_quality
+        self.frequency = int(frequency)
+        if self.frequency <= 0:
+            raise ValueError("frequency must be positive")
         if flush_interval < 1:
             raise ValueError("flush_interval must be positive")
         self.flush_interval = int(flush_interval)
@@ -83,11 +95,16 @@ class EpisodeRecorder:
                 "created_unix": time.time(),
                 "generator": "robodojosim",
                 "image_encoding": "xpolicylab_jpeg" if jpeg_quality is not None else "raw",
+                "camera_extrinsic_convention": "camera_to_world",
+                "camera_axes": "isaac_usd",
+                "depth_units": "meters",
+                "depth_storage_dtype": "float16",
+                "cartesian_pose_convention": "xyz_qw_qx_qy_qz_plus_gripper",
             }
         )
         self._file.create_dataset("data_format_version", data="v1.0")
         self._file.create_dataset("instruction", data=instruction)
-        self._file.require_group("additional_info").create_dataset("frequency", data=int(frequency))
+        self._file.require_group("additional_info").create_dataset("frequency", data=self.frequency)
         if metadata:
             self._file.create_dataset("metadata_json", data=json.dumps(dict(metadata), sort_keys=True))
         self._length = 0
@@ -115,6 +132,7 @@ class EpisodeRecorder:
         action: Mapping[str, Any],
         *,
         teacher: Mapping[str, Any] | None = None,
+        timestamp: float | None = None,
     ) -> None:
         if self._closed:
             raise RuntimeError("cannot append to a closed recorder")
@@ -129,15 +147,28 @@ class EpisodeRecorder:
                 if not isinstance(camera_data, Mapping):
                     continue
                 for key, value in camera_data.items():
-                    # Camera calibration and shape are episode constants.
-                    if key in {"intrinsic_matrix", "extrinsic_matrix", "shape"}:
+                    # Intrinsics and image shape are constant. Extrinsics are not:
+                    # the two wrist cameras move on every frame.
+                    if key in {"intrinsic_matrix", "shape"}:
                         self._write_once(f"vision/{camera}/{key}", value)
                     elif key in {"color", "colors"} and self.jpeg_quality is not None:
                         self._append_encoded_image(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
+                    elif key in {"depth", "depths", "distance_to_image_plane"}:
+                        # 3DWS packed_v2 also stores depth as float16. At this
+                        # tabletop range it preserves millimetric precision and
+                        # halves the six-hour source corpus before compression.
+                        self._append_value(
+                            f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}",
+                            _as_numpy(value).astype(np.float16),
+                        )
                     else:
                         self._append_value(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
         if teacher:
             self._append_mapping("teacher", teacher, pluralize=False)
+        self._append_value(
+            "meta/timestamp",
+            float(timestamp) if timestamp is not None else self._length / self.frequency,
+        )
         self._length += 1
         if self._length % self.flush_interval == 0:
             self._file.flush()
@@ -305,8 +336,20 @@ def validate_episode(path: str | Path) -> list[str]:
             timed = [(f"state/{name}", dataset) for name, dataset in state_datasets]
             timed += [(f"action/{name}", dataset) for name, dataset in action_datasets]
             timed += [(f"teacher/{name}", dataset) for name, dataset in _datasets_below(handle.get("teacher"))]
+            timed += [(f"meta/{name}", dataset) for name, dataset in _datasets_below(handle.get("meta"))]
             for camera_name, camera in _groups_below(handle.get("vision")):
-                for key in ("colors", "depths"):
+                for key in (
+                    "colors",
+                    "depths",
+                    "approximate_depths",
+                    "distance_to_image_planes",
+                    "extrinsic_matrices",
+                    "object_masks",
+                    "object_labels",
+                    "semantic_segmentations",
+                    "instance_segmentations",
+                    "instance_id_segmentations",
+                ):
                     if key in camera and isinstance(camera[key], h5py.Dataset):
                         timed.append((f"vision/{camera_name}/{key}", camera[key]))
             for name, dataset in timed:

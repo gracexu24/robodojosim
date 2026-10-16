@@ -14,6 +14,15 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 POLICY_GPU_ID="${ROBODOJOSIM_POLICY_GPU_ID:-0}"
 ENV_GPU_ID="${ROBODOJOSIM_ENV_GPU_ID:-0}"
 ROBODOJO_ROOT="$(cd "${XPL_ROOT}/.." && pwd)"
+WORLD_MODEL_CONFIG_ENABLED=0
+
+restore_world_model_observations() {
+    if [[ "${WORLD_MODEL_CONFIG_ENABLED}" == "1" ]]; then
+        conda run -n "${EVAL_ENV}" robodojosim configure-world-model-observations \
+          --robodojo-root "${ROBODOJO_ROOT}" --restore >/dev/null || true
+    fi
+}
+trap restore_world_model_observations EXIT
 
 export ROBODOJOSIM_DATASET_DIR="${OUTPUT_DIR}"
 export ROBODOJOSIM_CONFIG="${ROBODOJOSIM_CONFIG:-${PROJECT_ROOT}/configs/bottle_task.json}"
@@ -38,6 +47,20 @@ if [[ "${ROBODOJOSIM_FIX_BOTTLE_MASS:-1}" == "1" ]]; then
         LAYOUT_ARGS+=(--two-bottle-brown-yellow)
     fi
     conda run -n "${EVAL_ENV}" robodojosim "${LAYOUT_ARGS[@]}"
+fi
+
+# 3DWS needs metric depth and calibrated camera poses. Enable those expensive
+# annotators only for world-model collection, then restore the normal RGB-only
+# policy configuration through the EXIT trap above.
+if [[ "${ROBODOJOSIM_COLLECTION_PROFILE:-manual}" == world_model* ]]; then
+    conda run -n "${EVAL_ENV}" robodojosim configure-world-model-observations \
+      --robodojo-root "${ROBODOJO_ROOT}"
+    WORLD_MODEL_CONFIG_ENABLED=1
+else
+    # Also recover from a previous SIGKILL/power loss, where an EXIT trap could
+    # not restore the normal policy configuration.
+    conda run -n "${EVAL_ENV}" robodojosim configure-world-model-observations \
+      --robodojo-root "${ROBODOJO_ROOT}" --restore >/dev/null
 fi
 
 bash "${XPL_ROOT}/policy/bottle_scripted/eval.sh" \
