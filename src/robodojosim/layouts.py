@@ -112,6 +112,7 @@ def configure_training_dustbin(
     depth_scale: float = 1.3,
     height_scale: float = 0.30,
     two_bottle_brown_yellow: bool = False,
+    bottle_side_order: str = "alternating",
     dry_run: bool = False,
 ) -> list[Path]:
     """Create a shared, collision-free tabletop receptacle for both X5 arms.
@@ -132,7 +133,9 @@ def configure_training_dustbin(
     19.5 cm tabletop bin contains tilted landings while staying below both arms'
     measured carry workspace. When ``two_bottle_brown_yellow`` is enabled,
     only the brown Coca-Cola bottle and pale-yellow tea bottle are present.
-    Their left/right order alternates deterministically with layout index.
+    Their left/right order is controlled by ``bottle_side_order``. The
+    default alternates deterministically with layout index; ``brown_left``
+    and ``yellow_left`` force a single color arrangement across all layouts.
 
     This also recognizes the short-lived x=0 floor-bin transform so machines
     updated by an older robodojosim revision are migrated safely.
@@ -140,6 +143,10 @@ def configure_training_dustbin(
 
     if min(width_scale, depth_scale, height_scale) <= 0:
         raise ValueError("dustbin scale values must be positive")
+    if bottle_side_order not in {"alternating", "brown_left", "yellow_left"}:
+        raise ValueError(
+            "bottle_side_order must be one of: alternating, brown_left, yellow_left"
+        )
 
     root = Path(robodojo_root).expanduser().resolve()
     changed: list[Path] = []
@@ -184,9 +191,12 @@ def configure_training_dustbin(
             if not source_bottles:
                 continue
             templates = [deepcopy(source_bottles[index % len(source_bottles)]) for index in range(2)]
+            brown_left = bottle_side_order == "brown_left" or (
+                bottle_side_order == "alternating" and layout_index % 2 == 0
+            )
             assets = (
                 (_BROWN_COLA_BOTTLE, _YELLOW_TEA_BOTTLE)
-                if layout_index % 2 == 0
+                if brown_left
                 else (_YELLOW_TEA_BOTTLE, _BROWN_COLA_BOTTLE)
             )
             source_slots = ((-0.35, -0.26), (0.38, -0.26))
@@ -238,6 +248,7 @@ def centralize_dustbin(
     *,
     target_x: float = 0.0,
     two_bottle_brown_yellow: bool = False,
+    bottle_side_order: str = "alternating",
     dry_run: bool = False,
 ) -> list[Path]:
     """Backward-compatible name for the tabletop training-bin transform."""
@@ -246,5 +257,6 @@ def centralize_dustbin(
         robodojo_root,
         target_x=target_x,
         two_bottle_brown_yellow=two_bottle_brown_yellow,
+        bottle_side_order=bottle_side_order,
         dry_run=dry_run,
     )

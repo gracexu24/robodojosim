@@ -135,6 +135,7 @@ def _campaign(args: argparse.Namespace) -> int:
         batch_size=args.batch_size,
         max_passes=args.max_passes,
         lerobot_env=args.lerobot_env or None,
+        bottle_side_order=args.bottle_side_order,
         dry_run=args.dry_run,
     )
     if not args.dry_run:
@@ -154,6 +155,7 @@ def _balanced_campaign(args: argparse.Namespace) -> int:
         batch_size=args.batch_size,
         max_passes=args.max_passes,
         lerobot_env=args.lerobot_env or None,
+        bottle_side_order=args.bottle_side_order,
         dry_run=args.dry_run,
     )
     if not args.dry_run:
@@ -168,6 +170,7 @@ def _fix_layouts(args: argparse.Namespace) -> int:
             args.robodojo_root,
             target_x=args.dustbin_x,
             two_bottle_brown_yellow=args.two_bottle_brown_yellow,
+            bottle_side_order=args.bottle_side_order,
             dry_run=args.dry_run,
         )
         if args.centralize_dustbin
@@ -434,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.add_argument("--batch-size", type=int, default=25)
     campaign.add_argument("--max-passes", type=int)
     campaign.add_argument(
+        "--bottle-side-order",
+        choices=("alternating", "brown_left", "yellow_left"),
+        default="alternating",
+        help="force bottle colors to one side or alternate them by layout",
+    )
+    campaign.add_argument(
         "--lerobot-env",
         default="RoboDojoLeRobot",
         help="Conda environment for final LeRobot conversion; pass an empty string to use the current environment",
@@ -453,6 +462,12 @@ def build_parser() -> argparse.ArgumentParser:
     balanced.add_argument("--target-hours", type=float, default=6.0)
     balanced.add_argument("--batch-size", type=int, default=25)
     balanced.add_argument("--max-passes", type=int)
+    balanced.add_argument(
+        "--bottle-side-order",
+        choices=("alternating", "brown_left", "yellow_left"),
+        default="alternating",
+        help="force bottle colors to one side or alternate them by layout",
+    )
     balanced.add_argument("--lerobot-env", default="RoboDojoLeRobot")
     balanced.add_argument("--dry-run", action="store_true")
     balanced.set_defaults(func=_balanced_campaign)
@@ -475,6 +490,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--two-bottle-brown-yellow",
         action="store_true",
         help="install the supported brown/yellow two-bottle layouts in alternating left/right order",
+    )
+    layouts.add_argument(
+        "--bottle-side-order",
+        choices=("alternating", "brown_left", "yellow_left"),
+        default="alternating",
+        help="force bottle colors to one side or alternate them by layout",
     )
     layouts.add_argument("--dry-run", action="store_true")
     layouts.set_defaults(func=_fix_layouts)

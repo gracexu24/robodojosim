@@ -45,6 +45,7 @@ if [[ "${ROBODOJOSIM_FIX_BOTTLE_MASS:-1}" == "1" ]]; then
     fi
     if [[ "${ROBODOJOSIM_TWO_BOTTLE_TASK:-1}" == "1" ]]; then
         LAYOUT_ARGS+=(--two-bottle-brown-yellow)
+        LAYOUT_ARGS+=(--bottle-side-order "${ROBODOJOSIM_BOTTLE_SIDE_ORDER:-alternating}")
     fi
     conda run -n "${EVAL_ENV}" robodojosim "${LAYOUT_ARGS[@]}"
 fi

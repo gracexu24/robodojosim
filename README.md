@@ -224,6 +224,11 @@ conda run -n RoboDojoPolicy robodojosim balanced-world-model \
   --target-hours 1
 ```
 
+Use `--bottle-side-order yellow_left` to force the yellow bottle into the
+left source slot and the brown bottle into the right source slot for every
+episode (`brown_left` forces the reverse; `alternating` remains the default).
+The selected color-to-slot mapping is written to every episode's metadata.
+
 `success/` counts only successful two-bottle placements. `failure/` cycles a recoverable pre-bin drop, an
 under-lifted outer-bin-wall collision (near wall and randomized walls), and a deliberately missed initial grasp
 followed by closed-loop recovery. `miscellaneous/` uses the complete randomized skill library.

@@ -21,7 +21,13 @@ def test_pose_analysis_exports_every_frame_and_distribution_plots(tmp_path):
             episode,
             seed=episode,
             instruction="test",
-            metadata={"collection_profile": profile, "layout_seed": episode},
+            metadata={
+                "collection_profile": profile,
+                "layout_seed": episode,
+                "bottle_side_order": "yellow_left",
+                "bottle0_identity": "yellow",
+                "bottle1_identity": "brown",
+            },
         )
         action = {
             "left_ee_pose": snapshot.arms["left"].as_array(),
@@ -53,6 +59,7 @@ def test_pose_analysis_exports_every_frame_and_distribution_plots(tmp_path):
         rows = list(csv.DictReader(handle))
     assert len(rows) == 12
     assert {row["bottle"] for row in rows} == {"bottle0", "bottle1"}
+    assert {row["identity"] for row in rows} == {"brown", "yellow"}
     assert (output / "all_bottle_xyz_positions.png").stat().st_size > 0
     assert (output / "bottle_xy_heatmaps_all_categories.png").stat().st_size > 0
     assert all((output / f"{category}_bottle_xy_heatmap.png").stat().st_size > 0 for category in profiles)

@@ -232,6 +232,49 @@ def test_two_bottle_variant_keeps_only_brown_cola_and_yellow_bottle(tmp_path):
     assert configure_training_dustbin(tmp_path, two_bottle_brown_yellow=True) == []
 
 
+def test_two_bottle_variant_can_force_yellow_left_across_layouts(tmp_path):
+    layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
+    layout_dir.mkdir(parents=True)
+    for layout_index in (0, 1):
+        path = layout_dir / f"put_bottles_into_dustbin_{layout_index}.json"
+        bottles = [
+            {
+                "category": "bottle",
+                "category_idx": index,
+                "label": f"bottle{slot}",
+                "default_pos": [0.0, 0.0, 0.8],
+                "physics": {"mass": 0.2},
+            }
+            for slot, index in enumerate((0, 25))
+        ]
+        path.write_text(
+            json.dumps(
+                {
+                    "Rigid": {"bottle": bottles},
+                    "Geometry": {"dustbin": [{"category_idx": 0, "label": "dustbin"}]},
+                    "Table": {"default_pos": [0.0, 0.0, 0.74], "scale": [1.0, 1.0, 0.05]},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    configure_training_dustbin(
+        tmp_path,
+        two_bottle_brown_yellow=True,
+        bottle_side_order="yellow_left",
+    )
+
+    for layout_index in (0, 1):
+        bottles = json.loads(
+            (layout_dir / f"put_bottles_into_dustbin_{layout_index}.json").read_text()
+        )["Rigid"]["bottle"]
+        assert [item["category_idx"] for item in bottles] == [25, 0]
+        assert [item["default_pos"][:2] for item in bottles] == [
+            [-0.35, -0.26],
+            [0.38, -0.26],
+        ]
+
+
 def test_training_dustbin_migrates_old_centered_floor_variant(tmp_path):
     layout_dir = tmp_path / "Assets" / "Eval_Layout" / "RoboDojo" / "arx_x5" / "0"
     layout_dir.mkdir(parents=True)

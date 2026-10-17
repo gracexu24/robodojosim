@@ -128,11 +128,16 @@ def run_campaign(
     batch_size: int = 25,
     max_passes: int | None = None,
     lerobot_env: str | None = "RoboDojoLeRobot",
+    bottle_side_order: str = "alternating",
     dry_run: bool = False,
 ) -> DatasetStats:
     target = campaign_target(profile, target_episodes=target_episodes, target_hours=target_hours)
     if batch_size < 1 or batch_size > 25:
         raise ValueError("batch_size must be between 1 and RoboDojo's 25 available layouts")
+    if bottle_side_order not in {"alternating", "brown_left", "yellow_left"}:
+        raise ValueError(
+            "bottle_side_order must be one of: alternating, brown_left, yellow_left"
+        )
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     state_path = output / "campaign_state.json"
@@ -175,6 +180,7 @@ def run_campaign(
                 # override that silently restores the deprecated four-bottle
                 # handoff task.
                 "ROBODOJOSIM_TWO_BOTTLE_TASK": "1",
+                "ROBODOJOSIM_BOTTLE_SIDE_ORDER": bottle_side_order,
             }
         )
         command = [
@@ -198,6 +204,7 @@ def run_campaign(
                         "trajectory_variant": pass_index,
                         "layout_seed": evaluation_seed,
                         "scene_variant": "two_bottle_brown_yellow",
+                        "bottle_side_order": bottle_side_order,
                         "current_stats": stats.to_dict(),
                     },
                     indent=2,
@@ -265,6 +272,7 @@ def run_balanced_world_model_campaign(
     batch_size: int = 25,
     max_passes: int | None = None,
     lerobot_env: str | None = "RoboDojoLeRobot",
+    bottle_side_order: str = "alternating",
     dry_run: bool = False,
 ) -> dict[str, DatasetStats]:
     """Collect equal recorded-time success, failure-event, and miscellaneous datasets."""
@@ -293,6 +301,7 @@ def run_balanced_world_model_campaign(
             batch_size=batch_size,
             max_passes=max_passes,
             lerobot_env=lerobot_env,
+            bottle_side_order=bottle_side_order,
             dry_run=dry_run,
         )
     if not dry_run:
@@ -300,6 +309,7 @@ def run_balanced_world_model_campaign(
             "format_version": 1,
             "target_total_hours": total_hours,
             "target_hours_per_category": per_category_hours,
+            "bottle_side_order": bottle_side_order,
             "categories": {name: stats.to_dict() for name, stats in results.items()},
         }
         _save_state(root / "balanced_campaign_state.json", payload)

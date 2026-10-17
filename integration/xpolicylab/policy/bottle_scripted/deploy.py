@@ -34,6 +34,11 @@ def eval_one_episode(TASK_ENV, model_client):
 
     output_dir = Path(os.environ.get("ROBODOJOSIM_DATASET_DIR", "datasets/put_bottles_into_dustbin"))
     collection_profile = os.environ.get("ROBODOJOSIM_COLLECTION_PROFILE", "manual")
+    bottle_side_order = os.environ.get("ROBODOJOSIM_BOTTLE_SIDE_ORDER", "alternating")
+    bottle_identities = {
+        "brown_left": {"bottle0": "brown", "bottle1": "yellow"},
+        "yellow_left": {"bottle0": "yellow", "bottle1": "brown"},
+    }.get(bottle_side_order, {"bottle0": "layout_dependent", "bottle1": "layout_dependent"})
     source_frequency = int(observation.get("additional_info", {}).get("frequency", 25))
     default_record_frequency = 10 if collection_profile.startswith("world_model") else source_frequency
     record_frequency = int(os.environ.get("ROBODOJOSIM_RECORD_FREQUENCY", str(default_record_frequency)))
@@ -70,6 +75,9 @@ def eval_one_episode(TASK_ENV, model_client):
                 "trajectory_variant": trajectory_variant,
                 "collection_profile": collection_profile,
                 "scene_variant": "two_bottle_brown_yellow",
+                "bottle_side_order": bottle_side_order,
+                "bottle0_identity": bottle_identities["bottle0"],
+                "bottle1_identity": bottle_identities["bottle1"],
                 "campaign_id": os.environ.get("ROBODOJOSIM_CAMPAIGN_ID", "manual"),
                 "source_frequency": source_frequency,
                 "record_frequency": record_frequency,

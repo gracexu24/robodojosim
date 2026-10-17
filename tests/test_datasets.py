@@ -79,11 +79,13 @@ def test_campaign_targets_and_dry_run(tmp_path, capsys):
         policy_env="RoboDojo",
         eval_env="RoboDojo",
         output=tmp_path / "campaign",
+        bottle_side_order="yellow_left",
         dry_run=True,
     )
     payload = json.loads(capsys.readouterr().out)
     assert payload["evaluation_count"] == 25
     assert payload["episode_offset"] == 0
+    assert payload["bottle_side_order"] == "yellow_left"
 
 
 def test_campaign_cycles_installed_layout_seeds_without_reusing_episode_ids(tmp_path, capsys):

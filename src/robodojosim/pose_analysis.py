@@ -12,10 +12,11 @@ import numpy as np
 
 CATEGORIES = ("success", "failure", "miscellaneous")
 BOTTLES = ("bottle0", "bottle1")
-_BOTTLE_LABELS = {"bottle0": "Brown bottle", "bottle1": "Yellow bottle"}
-_BOTTLE_COLORS = {
-    "bottle0": np.array([45, 95, 185], dtype=np.float32),
-    "bottle1": np.array([20, 170, 230], dtype=np.float32),
+IDENTITIES = ("brown", "yellow")
+_IDENTITY_LABELS = {"brown": "Brown bottle", "yellow": "Yellow bottle"}
+_IDENTITY_COLORS = {
+    "brown": np.array([45, 95, 185], dtype=np.float32),
+    "yellow": np.array([20, 170, 230], dtype=np.float32),
 }
 _HEATMAP_CELL_METERS = 0.02
 
@@ -28,6 +29,7 @@ class PoseTrajectory:
     frequency: float
     start_seconds: float
     bottle: str
+    identity: str
     positions: np.ndarray
 
 
@@ -48,6 +50,12 @@ def _read_trajectories(root: Path) -> tuple[list[PoseTrajectory], dict[str, np.n
                 if frequency <= 0:
                     raise ValueError(f"{path}: recording frequency must be positive")
                 length = int(handle.attrs.get("length", 0))
+                metadata: dict[str, Any] = {}
+                if "metadata_json" in handle:
+                    raw_metadata = handle["metadata_json"][()]
+                    if isinstance(raw_metadata, bytes):
+                        raw_metadata = raw_metadata.decode("utf-8")
+                    metadata = json.loads(str(raw_metadata))
                 for bottle in BOTTLES:
                     key = f"teacher/{bottle}_pose"
                     if key not in handle:
@@ -55,6 +63,14 @@ def _read_trajectories(root: Path) -> tuple[list[PoseTrajectory], dict[str, np.n
                     positions = np.asarray(handle[key][:, :3], dtype=np.float64)
                     if positions.shape != (length, 3):
                         raise ValueError(f"{path}: {key} has shape {positions.shape}, expected {(length, 3)}")
+                    identity = str(
+                        metadata.get(
+                            f"{bottle}_identity",
+                            "brown" if bottle == "bottle0" else "yellow",
+                        )
+                    )
+                    if identity not in IDENTITIES:
+                        identity = "brown" if bottle == "bottle0" else "yellow"
                     trajectories.append(
                         PoseTrajectory(
                             category=category,
@@ -63,6 +79,7 @@ def _read_trajectories(root: Path) -> tuple[list[PoseTrajectory], dict[str, np.n
                             frequency=frequency,
                             start_seconds=elapsed + category_elapsed,
                             bottle=bottle,
+                            identity=identity,
                             positions=positions,
                         )
                     )
@@ -80,7 +97,20 @@ def _read_trajectories(root: Path) -> tuple[list[PoseTrajectory], dict[str, np.n
 def _write_csv(path: Path, trajectories: list[PoseTrajectory]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(("category", "episode_id", "frame", "recorded_time_s", "bottle", "x", "y", "z", "success"))
+        writer.writerow(
+            (
+                "category",
+                "episode_id",
+                "frame",
+                "recorded_time_s",
+                "bottle",
+                "identity",
+                "x",
+                "y",
+                "z",
+                "success",
+            )
+        )
         for trajectory in trajectories:
             for frame, (x, y, z) in enumerate(trajectory.positions):
                 writer.writerow(
@@ -90,6 +120,7 @@ def _write_csv(path: Path, trajectories: list[PoseTrajectory]) -> None:
                         frame,
                         f"{trajectory.start_seconds + frame / trajectory.frequency:.6f}",
                         trajectory.bottle,
+                        trajectory.identity,
                         f"{x:.8f}",
                         f"{y:.8f}",
                         f"{z:.8f}",
@@ -135,14 +166,16 @@ def _heatmap_edges(
 def _heatmap_histogram(
     trajectories: list[PoseTrajectory],
     category: str,
-    bottle: str,
+    identity: str,
     x_edges: np.ndarray,
     y_edges: np.ndarray,
 ) -> np.ndarray:
     selected = [
         trajectory.positions[:, :2]
         for trajectory in trajectories
-        if trajectory.category == category and trajectory.bottle == bottle and len(trajectory.positions)
+        if trajectory.category == category
+        and trajectory.identity == identity
+        and len(trajectory.positions)
     ]
     if not selected:
         return np.zeros((len(y_edges) - 1, len(x_edges) - 1), dtype=np.float64)
@@ -169,7 +202,7 @@ def _draw_heatmap_panel(
     width: int,
     height: int,
     category: str,
-    bottle: str,
+    identity: str,
     histogram: np.ndarray,
     maximum: float,
     dustbin_positions: np.ndarray,
@@ -180,7 +213,7 @@ def _draw_heatmap_panel(
     intensity = np.flipud(_heatmap_intensity(histogram, maximum))
     intensity = cv2.resize(intensity, (width, height), interpolation=cv2.INTER_NEAREST)[..., None]
     background = np.full((height, width, 3), 252.0, dtype=np.float32)
-    color = _BOTTLE_COLORS[bottle]
+    color = _IDENTITY_COLORS[identity]
     plot = background * (1.0 - intensity) + color * intensity
     canvas[top : top + height, left : left + width] = np.clip(plot, 0, 255).astype(np.uint8)
 
@@ -206,7 +239,7 @@ def _draw_heatmap_panel(
         cv2.putText(canvas, "bin", (max(left + 5, x0 + 7), min(top + height - 8, y0 + 20)), 0, 0.48, (35, 35, 35), 1, cv2.LINE_AA)
 
     cv2.rectangle(canvas, (left, top), (left + width, top + height), (70, 70, 70), 1)
-    panel_title = _BOTTLE_LABELS[bottle]
+    panel_title = _IDENTITY_LABELS[identity]
     if show_category:
         panel_title = f"{category.title()} - {panel_title.lower()}"
     cv2.putText(canvas, panel_title, (left, top - 18), 0, 0.68, (30, 30, 30), 2, cv2.LINE_AA)
@@ -243,7 +276,7 @@ def _render_heatmap(
 ) -> None:
     canvas = np.full((760, 1280, 3), 248, dtype=np.uint8)
     cv2.putText(canvas, f"{category.title()} bottle XY occupancy", (65, 48), 0, 1.0, (25, 25, 25), 2, cv2.LINE_AA)
-    for bottle, left in zip(BOTTLES, (85, 685), strict=True):
+    for identity, left in zip(IDENTITIES, (85, 685), strict=True):
         _draw_heatmap_panel(
             canvas,
             left=left,
@@ -251,8 +284,8 @@ def _render_heatmap(
             width=510,
             height=440,
             category=category,
-            bottle=bottle,
-            histogram=_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges),
+            identity=identity,
+            histogram=_heatmap_histogram(trajectories, category, identity, x_edges, y_edges),
             maximum=maximum,
             dustbin_positions=dustbin_positions,
             xlim=xlim,
@@ -276,7 +309,7 @@ def _render_all_heatmaps(
     canvas = np.full((2190, 1280, 3), 248, dtype=np.uint8)
     cv2.putText(canvas, "Bottle XY occupancy by collection category", (65, 48), 0, 1.0, (25, 25, 25), 2, cv2.LINE_AA)
     for row, category in enumerate(CATEGORIES):
-        for bottle, left in zip(BOTTLES, (85, 685), strict=True):
+        for identity, left in zip(IDENTITIES, (85, 685), strict=True):
             _draw_heatmap_panel(
                 canvas,
                 left=left,
@@ -284,8 +317,8 @@ def _render_all_heatmaps(
                 width=510,
                 height=440,
                 category=category,
-                bottle=bottle,
-                histogram=_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges),
+                identity=identity,
+                histogram=_heatmap_histogram(trajectories, category, identity, x_edges, y_edges),
                 maximum=maximum,
                 dustbin_positions=dustbins[category],
                 xlim=xlim,
@@ -300,7 +333,7 @@ def _render_xyz(path: Path, trajectories: list[PoseTrajectory]) -> None:
     canvas = np.full((1120, 1500, 3), 248, dtype=np.uint8)
     left, width = 120, 1320
     panel_height = 265
-    colors = {"bottle0": (55, 105, 180), "bottle1": (30, 180, 220)}
+    colors = {"brown": (55, 105, 180), "yellow": (30, 180, 220)}
     total_seconds = max(
         trajectory.start_seconds + len(trajectory.positions) / trajectory.frequency for trajectory in trajectories
     )
@@ -340,7 +373,7 @@ def _render_xyz(path: Path, trajectories: list[PoseTrajectory]) -> None:
                     canvas,
                     [np.asarray(points, dtype=np.int32)],
                     False,
-                    colors[trajectory.bottle],
+                    colors[trajectory.identity],
                     1,
                     cv2.LINE_AA,
                 )
@@ -352,9 +385,9 @@ def _render_xyz(path: Path, trajectories: list[PoseTrajectory]) -> None:
         px = left + int(seconds / total_seconds * width)
         cv2.putText(canvas, f"{seconds / 60:.0f}", (px - 8, 1085), 0, 0.5, (50, 50, 50), 1, cv2.LINE_AA)
     cv2.putText(canvas, "cumulative recorded time (min)", (650, 1110), 0, 0.62, (35, 35, 35), 1, cv2.LINE_AA)
-    cv2.line(canvas, (1110, 52), (1150, 52), colors["bottle0"], 3, cv2.LINE_AA)
+    cv2.line(canvas, (1110, 52), (1150, 52), colors["brown"], 3, cv2.LINE_AA)
     cv2.putText(canvas, "brown bottle", (1160, 58), 0, 0.55, (40, 40, 40), 1, cv2.LINE_AA)
-    cv2.line(canvas, (1290, 52), (1330, 52), colors["bottle1"], 3, cv2.LINE_AA)
+    cv2.line(canvas, (1290, 52), (1330, 52), colors["yellow"], 3, cv2.LINE_AA)
     cv2.putText(canvas, "yellow bottle", (1340, 58), 0, 0.55, (40, 40, 40), 1, cv2.LINE_AA)
     if not cv2.imwrite(str(path), canvas):
         raise OSError(f"failed to write {path}")
@@ -371,9 +404,9 @@ def analyze_pose_distribution(dataset_root: str | Path, output: str | Path) -> d
     xlim, ylim = _global_xy_limits(trajectories)
     x_edges, y_edges = _heatmap_edges(xlim, ylim)
     maximum = max(
-        float(np.max(_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges)))
+        float(np.max(_heatmap_histogram(trajectories, category, identity, x_edges, y_edges)))
         for category in CATEGORIES
-        for bottle in BOTTLES
+        for identity in IDENTITIES
     )
     for category in CATEGORIES:
         if any(trajectory.category == category for trajectory in trajectories):
@@ -412,11 +445,11 @@ def analyze_pose_distribution(dataset_root: str | Path, output: str | Path) -> d
     }
     for category in CATEGORIES:
         selected = [trajectory for trajectory in trajectories if trajectory.category == category]
-        frames = sum(len(trajectory.positions) for trajectory in selected if trajectory.bottle == "bottle0")
+        frames = sum(len(trajectory.positions) for trajectory in selected if trajectory.identity == "brown")
         seconds = sum(
             len(trajectory.positions) / trajectory.frequency
             for trajectory in selected
-            if trajectory.bottle == "bottle0"
+            if trajectory.identity == "brown"
         )
         summary["categories"][category] = {
             "episodes": len({trajectory.episode_id for trajectory in selected}),
