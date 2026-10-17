@@ -54,5 +54,9 @@ def test_pose_analysis_exports_every_frame_and_distribution_plots(tmp_path):
     assert len(rows) == 12
     assert {row["bottle"] for row in rows} == {"bottle0", "bottle1"}
     assert (output / "all_bottle_xyz_positions.png").stat().st_size > 0
+    assert (output / "bottle_xy_heatmaps_all_categories.png").stat().st_size > 0
     assert all((output / f"{category}_bottle_xy_heatmap.png").stat().st_size > 0 for category in profiles)
-    assert json.loads((output / "pose_distribution_summary.json").read_text())["format_version"] == 1
+    written_summary = json.loads((output / "pose_distribution_summary.json").read_text())
+    assert written_summary["format_version"] == 1
+    assert written_summary["heatmap_cell_meters"] == 0.02
+    assert written_summary["heatmap_max_frames_per_cell"] > 0

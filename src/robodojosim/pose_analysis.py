@@ -12,6 +12,12 @@ import numpy as np
 
 CATEGORIES = ("success", "failure", "miscellaneous")
 BOTTLES = ("bottle0", "bottle1")
+_BOTTLE_LABELS = {"bottle0": "Brown bottle", "bottle1": "Yellow bottle"}
+_BOTTLE_COLORS = {
+    "bottle0": np.array([45, 95, 185], dtype=np.float32),
+    "bottle1": np.array([20, 170, 230], dtype=np.float32),
+}
+_HEATMAP_CELL_METERS = 0.02
 
 
 @dataclass(frozen=True)
@@ -118,6 +124,110 @@ def _map_xy(
     return px, py
 
 
+def _heatmap_edges(
+    xlim: tuple[float, float], ylim: tuple[float, float]
+) -> tuple[np.ndarray, np.ndarray]:
+    x_bins = max(16, int(np.ceil((xlim[1] - xlim[0]) / _HEATMAP_CELL_METERS)))
+    y_bins = max(16, int(np.ceil((ylim[1] - ylim[0]) / _HEATMAP_CELL_METERS)))
+    return np.linspace(*xlim, x_bins + 1), np.linspace(*ylim, y_bins + 1)
+
+
+def _heatmap_histogram(
+    trajectories: list[PoseTrajectory],
+    category: str,
+    bottle: str,
+    x_edges: np.ndarray,
+    y_edges: np.ndarray,
+) -> np.ndarray:
+    selected = [
+        trajectory.positions[:, :2]
+        for trajectory in trajectories
+        if trajectory.category == category and trajectory.bottle == bottle and len(trajectory.positions)
+    ]
+    if not selected:
+        return np.zeros((len(y_edges) - 1, len(x_edges) - 1), dtype=np.float64)
+    points = np.vstack(selected)
+    histogram, _, _ = np.histogram2d(points[:, 1], points[:, 0], bins=(y_edges, x_edges))
+    return histogram
+
+
+def _heatmap_intensity(histogram: np.ndarray, maximum: float) -> np.ndarray:
+    if maximum <= 0:
+        return np.zeros_like(histogram, dtype=np.float32)
+    # Log scaling retains short transit paths while preventing repeated reset and
+    # hold poses from washing out every other occupied cell. The square root is
+    # a display gamma only; the colorbar remains labelled in recorded frames.
+    normalized = np.log1p(histogram) / np.log1p(maximum)
+    return np.sqrt(np.clip(normalized, 0.0, 1.0)).astype(np.float32)
+
+
+def _draw_heatmap_panel(
+    canvas: np.ndarray,
+    *,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    category: str,
+    bottle: str,
+    histogram: np.ndarray,
+    maximum: float,
+    dustbin_positions: np.ndarray,
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+    show_category: bool,
+) -> None:
+    intensity = np.flipud(_heatmap_intensity(histogram, maximum))
+    intensity = cv2.resize(intensity, (width, height), interpolation=cv2.INTER_NEAREST)[..., None]
+    background = np.full((height, width, 3), 252.0, dtype=np.float32)
+    color = _BOTTLE_COLORS[bottle]
+    plot = background * (1.0 - intensity) + color * intensity
+    canvas[top : top + height, left : left + width] = np.clip(plot, 0, 255).astype(np.uint8)
+
+    for index in range(6):
+        x = xlim[0] + index * (xlim[1] - xlim[0]) / 5
+        px, _ = _map_xy(x, ylim[0], xlim, ylim, left, top, width, height)
+        cv2.line(canvas, (px, top), (px, top + height), (220, 220, 220), 1, cv2.LINE_AA)
+        cv2.putText(canvas, f"{x:.2f}", (px - 21, top + height + 25), 0, 0.43, (55, 55, 55), 1, cv2.LINE_AA)
+        y = ylim[0] + index * (ylim[1] - ylim[0]) / 5
+        _, py = _map_xy(xlim[0], y, xlim, ylim, left, top, width, height)
+        cv2.line(canvas, (left, py), (left + width, py), (220, 220, 220), 1, cv2.LINE_AA)
+        cv2.putText(canvas, f"{y:.2f}", (left - 55, py + 5), 0, 0.43, (55, 55, 55), 1, cv2.LINE_AA)
+
+    if len(dustbin_positions):
+        center = np.median(dustbin_positions[:, :2], axis=0)
+        corner0 = _map_xy(center[0] - 0.29, center[1] - 0.31, xlim, ylim, left, top, width, height)
+        corner1 = _map_xy(center[0] + 0.29, center[1] + 0.31, xlim, ylim, left, top, width, height)
+        x0, x1 = sorted((corner0[0], corner1[0]))
+        y0, y1 = sorted((corner0[1], corner1[1]))
+        cv2.rectangle(canvas, (x0, y0), (x1, y1), (35, 35, 35), 3, cv2.LINE_AA)
+        cv2.putText(canvas, "bin", (max(left + 5, x0 + 7), min(top + height - 8, y0 + 20)), 0, 0.48, (35, 35, 35), 1, cv2.LINE_AA)
+
+    cv2.rectangle(canvas, (left, top), (left + width, top + height), (70, 70, 70), 1)
+    panel_title = _BOTTLE_LABELS[bottle]
+    if show_category:
+        panel_title = f"{category.title()} - {panel_title.lower()}"
+    cv2.putText(canvas, panel_title, (left, top - 18), 0, 0.68, (30, 30, 30), 2, cv2.LINE_AA)
+    cv2.putText(canvas, "World X (m)", (left + width // 2 - 42, top + height + 50), 0, 0.52, (40, 40, 40), 1, cv2.LINE_AA)
+    cv2.putText(canvas, "World Y (m)", (left - 55, top - 43), 0, 0.48, (40, 40, 40), 1, cv2.LINE_AA)
+
+    bar_left, bar_top, bar_width, bar_height = left + 40, top + height + 68, width - 80, 14
+    gradient = np.linspace(0.0, 1.0, bar_width, dtype=np.float32)[None, :, None]
+    gradient_image = 252.0 * (1.0 - gradient) + color * gradient
+    canvas[bar_top : bar_top + bar_height, bar_left : bar_left + bar_width] = np.repeat(
+        np.clip(gradient_image, 0, 255).astype(np.uint8), bar_height, axis=0
+    )
+    cv2.rectangle(canvas, (bar_left, bar_top), (bar_left + bar_width, bar_top + bar_height), (95, 95, 95), 1)
+    tick_values = sorted({0, 1, 10, 100, int(maximum)})
+    for count in tick_values:
+        position = 0.0 if count <= 0 else np.sqrt(np.log1p(count) / np.log1p(max(maximum, 1.0)))
+        px = bar_left + int(np.clip(position, 0.0, 1.0) * bar_width)
+        cv2.line(canvas, (px, bar_top + bar_height), (px, bar_top + bar_height + 5), (60, 60, 60), 1)
+        label = f"{count:,}"
+        cv2.putText(canvas, label, (px - min(18, len(label) * 4), bar_top + bar_height + 21), 0, 0.38, (60, 60, 60), 1, cv2.LINE_AA)
+    cv2.putText(canvas, "Recorded frames per 2 cm cell (log scale)", (bar_left + 50, bar_top + 45), 0, 0.42, (50, 50, 50), 1, cv2.LINE_AA)
+
+
 def _render_heatmap(
     path: Path,
     category: str,
@@ -125,53 +235,61 @@ def _render_heatmap(
     dustbin_positions: np.ndarray,
     xlim: tuple[float, float],
     ylim: tuple[float, float],
+    x_edges: np.ndarray,
+    y_edges: np.ndarray,
+    maximum: float,
 ) -> None:
-    canvas = np.full((820, 1000, 3), 248, dtype=np.uint8)
-    left, top, width, height = 110, 90, 820, 620
-    plot = np.full((height, width, 3), 255, dtype=np.float32)
-    colors = {"bottle0": np.array([55, 105, 180], dtype=np.float32), "bottle1": np.array([30, 205, 235], dtype=np.float32)}
-    for bottle in BOTTLES:
-        points = np.vstack(
-            [
-                trajectory.positions[:, :2]
-                for trajectory in trajectories
-                if trajectory.category == category and trajectory.bottle == bottle and len(trajectory.positions)
-            ]
+    canvas = np.full((760, 1280, 3), 248, dtype=np.uint8)
+    cv2.putText(canvas, f"{category.title()} bottle XY occupancy", (65, 48), 0, 1.0, (25, 25, 25), 2, cv2.LINE_AA)
+    for bottle, left in zip(BOTTLES, (85, 685), strict=True):
+        _draw_heatmap_panel(
+            canvas,
+            left=left,
+            top=115,
+            width=510,
+            height=440,
+            category=category,
+            bottle=bottle,
+            histogram=_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges),
+            maximum=maximum,
+            dustbin_positions=dustbin_positions,
+            xlim=xlim,
+            ylim=ylim,
+            show_category=False,
         )
-        histogram, _, _ = np.histogram2d(
-            points[:, 1],
-            points[:, 0],
-            bins=(height, width),
-            range=((ylim[0], ylim[1]), (xlim[0], xlim[1])),
-        )
-        density = np.log1p(histogram)
-        if np.max(density) > 0:
-            density /= np.max(density)
-        density = np.flipud(density)[..., None]
-        alpha = 0.82 * density
-        plot = plot * (1.0 - alpha) + colors[bottle] * alpha
-    canvas[top : top + height, left : left + width] = np.clip(plot, 0, 255).astype(np.uint8)
-    cv2.rectangle(canvas, (left, top), (left + width, top + height), (80, 80, 80), 1)
-    if len(dustbin_positions):
-        center = np.median(dustbin_positions[:, :2], axis=0)
-        corner0 = _map_xy(center[0] - 0.29, center[1] - 0.31, xlim, ylim, left, top, width, height)
-        corner1 = _map_xy(center[0] + 0.29, center[1] + 0.31, xlim, ylim, left, top, width, height)
-        cv2.rectangle(canvas, corner0, corner1, (30, 30, 30), 3)
-        cv2.putText(canvas, "bin footprint", (corner0[0] + 8, min(corner0[1] - 8, corner1[1] - 8)), 0, 0.55, (30, 30, 30), 1, cv2.LINE_AA)
-    for index in range(6):
-        x = xlim[0] + index * (xlim[1] - xlim[0]) / 5
-        px, _ = _map_xy(x, ylim[0], xlim, ylim, left, top, width, height)
-        cv2.putText(canvas, f"{x:.2f}", (px - 22, top + height + 28), 0, 0.48, (50, 50, 50), 1, cv2.LINE_AA)
-        y = ylim[0] + index * (ylim[1] - ylim[0]) / 5
-        _, py = _map_xy(xlim[0], y, xlim, ylim, left, top, width, height)
-        cv2.putText(canvas, f"{y:.2f}", (35, py + 5), 0, 0.48, (50, 50, 50), 1, cv2.LINE_AA)
-    cv2.putText(canvas, f"{category.title()} bottle XY distribution", (110, 48), 0, 1.05, (25, 25, 25), 2, cv2.LINE_AA)
-    cv2.putText(canvas, "world X (m)", (450, 785), 0, 0.65, (35, 35, 35), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "world Y (m)", (8, 65), 0, 0.65, (35, 35, 35), 1, cv2.LINE_AA)
-    cv2.circle(canvas, (700, 48), 8, tuple(int(value) for value in colors["bottle0"]), -1)
-    cv2.putText(canvas, "brown bottle", (715, 54), 0, 0.55, (40, 40, 40), 1, cv2.LINE_AA)
-    cv2.circle(canvas, (835, 48), 8, tuple(int(value) for value in colors["bottle1"]), -1)
-    cv2.putText(canvas, "yellow bottle", (850, 54), 0, 0.55, (40, 40, 40), 1, cv2.LINE_AA)
+    if not cv2.imwrite(str(path), canvas):
+        raise OSError(f"failed to write {path}")
+
+
+def _render_all_heatmaps(
+    path: Path,
+    trajectories: list[PoseTrajectory],
+    dustbins: dict[str, np.ndarray],
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+    x_edges: np.ndarray,
+    y_edges: np.ndarray,
+    maximum: float,
+) -> None:
+    canvas = np.full((2190, 1280, 3), 248, dtype=np.uint8)
+    cv2.putText(canvas, "Bottle XY occupancy by collection category", (65, 48), 0, 1.0, (25, 25, 25), 2, cv2.LINE_AA)
+    for row, category in enumerate(CATEGORIES):
+        for bottle, left in zip(BOTTLES, (85, 685), strict=True):
+            _draw_heatmap_panel(
+                canvas,
+                left=left,
+                top=115 + row * 700,
+                width=510,
+                height=440,
+                category=category,
+                bottle=bottle,
+                histogram=_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges),
+                maximum=maximum,
+                dustbin_positions=dustbins[category],
+                xlim=xlim,
+                ylim=ylim,
+                show_category=True,
+            )
     if not cv2.imwrite(str(path), canvas):
         raise OSError(f"failed to write {path}")
 
@@ -249,6 +367,12 @@ def analyze_pose_distribution(dataset_root: str | Path, output: str | Path) -> d
         raise ValueError(f"no complete balanced world-model episodes found below {root}")
     _write_csv(output / "bottle_positions_every_frame.csv", trajectories)
     xlim, ylim = _global_xy_limits(trajectories)
+    x_edges, y_edges = _heatmap_edges(xlim, ylim)
+    maximum = max(
+        float(np.max(_heatmap_histogram(trajectories, category, bottle, x_edges, y_edges)))
+        for category in CATEGORIES
+        for bottle in BOTTLES
+    )
     for category in CATEGORIES:
         if any(trajectory.category == category for trajectory in trajectories):
             _render_heatmap(
@@ -258,13 +382,29 @@ def analyze_pose_distribution(dataset_root: str | Path, output: str | Path) -> d
                 dustbins[category],
                 xlim,
                 ylim,
+                x_edges,
+                y_edges,
+                maximum,
             )
+    _render_all_heatmaps(
+        output / "bottle_xy_heatmaps_all_categories.png",
+        trajectories,
+        dustbins,
+        xlim,
+        ylim,
+        x_edges,
+        y_edges,
+        maximum,
+    )
     _render_xyz(output / "all_bottle_xyz_positions.png", trajectories)
     summary: dict[str, Any] = {
         "format_version": 1,
         "dataset_root": str(root),
         "position_csv": "bottle_positions_every_frame.csv",
         "xyz_plot": "all_bottle_xyz_positions.png",
+        "combined_xy_heatmap": "bottle_xy_heatmaps_all_categories.png",
+        "heatmap_cell_meters": _HEATMAP_CELL_METERS,
+        "heatmap_max_frames_per_cell": maximum,
         "xy_limits": {"x": list(xlim), "y": list(ylim)},
         "categories": {},
     }
