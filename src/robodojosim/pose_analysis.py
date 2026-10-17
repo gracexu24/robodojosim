@@ -200,6 +200,8 @@ def _draw_heatmap_panel(
         corner1 = _map_xy(center[0] + 0.29, center[1] + 0.31, xlim, ylim, left, top, width, height)
         x0, x1 = sorted((corner0[0], corner1[0]))
         y0, y1 = sorted((corner0[1], corner1[1]))
+        x0, x1 = max(left, x0), min(left + width, x1)
+        y0, y1 = max(top, y0), min(top + height, y1)
         cv2.rectangle(canvas, (x0, y0), (x1, y1), (35, 35, 35), 3, cv2.LINE_AA)
         cv2.putText(canvas, "bin", (max(left + 5, x0 + 7), min(top + height - 8, y0 + 20)), 0, 0.48, (35, 35, 35), 1, cv2.LINE_AA)
 
