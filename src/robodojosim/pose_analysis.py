@@ -380,8 +380,7 @@ def _render_xyz(path: Path, trajectories: list[PoseTrajectory]) -> None:
         cv2.putText(canvas, f"world {label} (m)", (12, top + panel_height // 2), 0, 0.58, (35, 35, 35), 1, cv2.LINE_AA)
         cv2.putText(canvas, f"{high:.2f}", (68, top + 8), 0, 0.45, (60, 60, 60), 1, cv2.LINE_AA)
         cv2.putText(canvas, f"{low:.2f}", (68, top + panel_height), 0, 0.45, (60, 60, 60), 1, cv2.LINE_AA)
-    for minute in range(int(total_seconds // 600) + 2):
-        seconds = min(total_seconds, minute * 600.0)
+    for seconds in _time_axis_ticks(total_seconds, width):
         px = left + int(seconds / total_seconds * width)
         cv2.putText(canvas, f"{seconds / 60:.0f}", (px - 8, 1085), 0, 0.5, (50, 50, 50), 1, cv2.LINE_AA)
     cv2.putText(canvas, "cumulative recorded time (min)", (650, 1110), 0, 0.62, (35, 35, 35), 1, cv2.LINE_AA)
@@ -391,6 +390,20 @@ def _render_xyz(path: Path, trajectories: list[PoseTrajectory]) -> None:
     cv2.putText(canvas, "yellow bottle", (1340, 58), 0, 0.55, (40, 40, 40), 1, cv2.LINE_AA)
     if not cv2.imwrite(str(path), canvas):
         raise OSError(f"failed to write {path}")
+
+
+def _time_axis_ticks(total_seconds: float, width: int, *, minimum_spacing_px: int = 70) -> list[float]:
+    """Return ten-minute ticks without overlapping a short final remainder label."""
+
+    if total_seconds <= 0:
+        return [0.0]
+    ticks = [float(value) for value in np.arange(0.0, total_seconds + 1e-9, 600.0)]
+    if not ticks:
+        ticks = [0.0]
+    remaining_pixels = (total_seconds - ticks[-1]) / total_seconds * width
+    if total_seconds > ticks[-1] and remaining_pixels >= minimum_spacing_px:
+        ticks.append(float(total_seconds))
+    return ticks
 
 
 def analyze_pose_distribution(dataset_root: str | Path, output: str | Path) -> dict[str, Any]:

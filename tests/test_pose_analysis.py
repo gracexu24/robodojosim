@@ -2,7 +2,7 @@ import csv
 import json
 
 from robodojosim.mock_env import MockBottleEnv
-from robodojosim.pose_analysis import analyze_pose_distribution
+from robodojosim.pose_analysis import _time_axis_ticks, analyze_pose_distribution
 from robodojosim.recording import EpisodeRecorder
 from robodojosim.robodojo_adapter import teacher_frame
 
@@ -67,3 +67,8 @@ def test_pose_analysis_exports_every_frame_and_distribution_plots(tmp_path):
     assert written_summary["format_version"] == 1
     assert written_summary["heatmap_cell_meters"] == 0.02
     assert written_summary["heatmap_max_frames_per_cell"] > 0
+
+
+def test_time_axis_ticks_do_not_overlap_short_final_remainder():
+    assert _time_axis_ticks(3660.0, 1320) == [0.0, 600.0, 1200.0, 1800.0, 2400.0, 3000.0, 3600.0]
+    assert _time_axis_ticks(4020.0, 1320)[-1] == 4020.0
