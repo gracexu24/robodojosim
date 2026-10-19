@@ -24,6 +24,7 @@ from .world_model_export import (
 )
 from .world_model_qa import analyze_3dws_quality, render_3dws_review
 from .world_model_setup import configure_world_model_observations
+from .world_model_training import parse_training_root, stage_3dws_latents, stage_3dws_training
 
 
 def _dry_run(args: argparse.Namespace) -> int:
@@ -270,6 +271,21 @@ def _review_3dws(args: argparse.Namespace) -> int:
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"video": str(video), "report": str(report_path), **report}, indent=2, sort_keys=True))
     return int(not report["passed"])
+
+
+def _stage_3dws_training(args: argparse.Namespace) -> int:
+    manifest = stage_3dws_training(
+        [parse_training_root(value) for value in args.root],
+        args.output,
+    )
+    print(manifest)
+    return 0
+
+
+def _stage_3dws_latents(args: argparse.Namespace) -> int:
+    manifest = stage_3dws_latents(args.manifest, args.source_root, args.output)
+    print(manifest)
+    return 0
 
 
 def _episode_indices(value: str | None) -> tuple[int, ...] | None:
@@ -553,6 +569,27 @@ def build_parser() -> argparse.ArgumentParser:
     review_3dws.add_argument("--fps", type=float)
     review_3dws.add_argument("--maximum-frames", type=int, default=600)
     review_3dws.set_defaults(func=_review_3dws)
+    stage_3dws = subparsers.add_parser(
+        "stage-3dws-training",
+        help="stage several packed_v2 roots under globally unique bottle-training episode IDs",
+    )
+    stage_3dws.add_argument(
+        "--root",
+        action="append",
+        required=True,
+        metavar="LABEL=/ABSOLUTE/PATH",
+        help="packed root containing train/ and val/; repeat for every category and side order",
+    )
+    stage_3dws.add_argument("--output", required=True)
+    stage_3dws.set_defaults(func=_stage_3dws_training)
+    stage_latents = subparsers.add_parser(
+        "stage-3dws-latents",
+        help="stage per-root 3DWS latent exports under the manifest's globally unique episode IDs",
+    )
+    stage_latents.add_argument("--manifest", required=True)
+    stage_latents.add_argument("--source-root", required=True)
+    stage_latents.add_argument("--output", required=True)
+    stage_latents.set_defaults(func=_stage_3dws_latents)
     inspect_dataset = subparsers.add_parser("inspect-lerobot", help="validate a local training-facing LeRobot tree")
     inspect_dataset.add_argument("--dataset", required=True)
     inspect_dataset.set_defaults(func=_inspect_lerobot)

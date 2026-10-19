@@ -113,3 +113,67 @@ If an episode intentionally has no object annotations, `--geometry-only` creates
 
 Historical RGB-only episodes remain useful for policy work or 2D video models, but are invalid input for this 3D
 point-cloud model. The inspector intentionally rejects them.
+
+## Bottle-specific training integration
+
+The supplied 3DWS launchers are task- and machine-specific. Do not point the cloth, rope, or Push-T launchers at
+this corpus: they reference ALOHA/VX300S geometry, FoundationStereo sidecars, different camera IDs, and different
+workspace bounds. RoboDojoSim provides a plain bottle recipe that consumes only the validated `packed_v2` contract.
+
+First stage every packed category and side order. Labels must be unique. The command creates only lightweight
+symlinks and assigns one global episode ID space, so roots that each contain `episode_0.hdf5` cannot collide:
+
+```bash
+robodojosim stage-3dws-training \
+  --root brown_success=/data/brown-left/3dws-success \
+  --root brown_failure=/data/brown-left/3dws-failure \
+  --root brown_misc=/data/brown-left/3dws-miscellaneous \
+  --root yellow_success=/data/yellow-left/3dws-success \
+  --root yellow_failure=/data/yellow-left/3dws-failure \
+  --root yellow_misc=/data/yellow-left/3dws-miscellaneous \
+  --output /data/3dws-bottles/stage
+```
+
+Run a smoke VAE before a full run. The caller must already be in the supplied 3DWS Python environment:
+
+```bash
+ROBODOJOSIM_3DWS_SMOKE=1 bash scripts/train_3dws_bottle_vae.sh \
+  /workspace/3dws /data/3dws-bottles/stage \
+  /data/3dws-bottles/models/vae-smoke 0
+
+bash scripts/train_3dws_bottle_vae.sh \
+  /workspace/3dws /data/3dws-bottles/stage \
+  /data/3dws-bottles/models/vae 0,1
+```
+
+The baseline deliberately uses a 32x20x20 latent grid and one latent encoding per frame. Measure a representative
+latent episode on disk before increasing `ROBODOJOSIM_3DWS_NX/NY/NZ` or `ROBODOJOSIM_3DWS_ENCODINGS`; latent caches,
+not checkpoints, dominate storage.
+
+Export each original root separately, then stage its latents under the same global IDs as the packed files:
+
+```bash
+ROBODOJOSIM_BIN=/path/to/robodojosim bash scripts/export_3dws_bottle_latents.sh \
+  /workspace/3dws /data/3dws-bottles/stage \
+  /data/3dws-bottles/models/vae/checkpoints/best.pth \
+  /data/3dws-bottles/raw-latents /data/3dws-bottles/stage/latents 0
+```
+
+Finally smoke-test and train action-conditioned dynamics:
+
+```bash
+ROBODOJOSIM_3DWS_SMOKE=1 bash scripts/train_3dws_bottle_dynamics.sh \
+  /workspace/3dws /data/3dws-bottles/stage /data/3dws-bottles/stage/latents \
+  /data/3dws-bottles/models/vae/checkpoints/best.pth \
+  /data/3dws-bottles/models/dynamics-smoke 0
+
+bash scripts/train_3dws_bottle_dynamics.sh \
+  /workspace/3dws /data/3dws-bottles/stage /data/3dws-bottles/stage/latents \
+  /data/3dws-bottles/models/vae/checkpoints/best.pth \
+  /data/3dws-bottles/models/dynamics 0,1
+```
+
+The checked-in baseline is summarized in `configs/training_3dws_bottles.json`. It uses 8 history frames and an
+autoregressive 1-to-15-step curriculum at 10 Hz. W&B is off unless `ROBODOJOSIM_3DWS_WANDB=1`. Both launchers save
+their exact command and copy the staging manifest into the model directory. Existing `latest.pth` checkpoints are
+resumed rather than overwritten.

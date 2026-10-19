@@ -17,6 +17,8 @@ Ubuntu + NVIDIA machine.
 - Streaming HDF5 recording in XPolicyLab trajectory format.
 - A 3DWS `packed_v2` exporter with metric depth, calibrated moving-camera poses, 14D Cartesian actions, and
   pose-derived two-bottle label maps.
+- Bottle-specific 3DWS staging, VAE, latent-export, and dynamics launchers with globally unique episode IDs across
+  success/failure/miscellaneous and both bottle-side corpora.
 - Atomic episode completion, a manifest, validation, and resume-by-episode ID.
 - Quota-driven campaigns for exactly 50 successful policy episodes or at least six complete interaction hours.
 - XPolicyLab-compatible JPEG streams for long-running storage efficiency.

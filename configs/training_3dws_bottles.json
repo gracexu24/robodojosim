@@ -1,0 +1,32 @@
+{
+  "action": "cartesian_14d",
+  "bbox": [-0.85, 0.75, -0.55, 0.4, 0.3, 1.35],
+  "cameras": ["cam_head", "cam_left_wrist", "cam_right_wrist"],
+  "dataset": "robodojo_two_color_bottles",
+  "dynamics": {
+    "ar_max": 15,
+    "ar_stage_epochs": 50,
+    "batch_size": 4,
+    "history_frames": 8,
+    "learning_rate": 8e-05,
+    "object_alpha": 20.0
+  },
+  "latent_export": {
+    "encodings": 1,
+    "subsample_points": 150000
+  },
+  "notes": [
+    "Start with one encoding and the conservative grid; measure disk before increasing either.",
+    "The plain path intentionally omits ALOHA FK, robot-label caches, tactile data, SAM3 and FoundationStereo.",
+    "At 10 Hz, eight history frames are 0.8 seconds and 15 autoregressive steps are 1.5 seconds."
+  ],
+  "vae": {
+    "batch_size": 1,
+    "epochs": 300,
+    "grid": [32, 20, 20],
+    "iterations_per_epoch": 500,
+    "latent_channels": 8,
+    "learning_rate": 0.0002,
+    "max_points": 300000
+  }
+}
