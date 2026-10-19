@@ -36,6 +36,12 @@ def make_root(path: Path, episode: int = 0) -> Path:
     return path
 
 
+def make_exported_root(path: Path, episode: int = 0) -> Path:
+    make_packed(path / "train" / f"episode_{episode}.hdf5", episode)
+    make_packed(path / "validation" / f"episode_{episode + 1}.hdf5", episode + 1)
+    return path
+
+
 def test_parse_training_root_requires_labeled_absolute_path(tmp_path):
     parsed = parse_training_root(f"brown_success={tmp_path / 'packed'}")
     assert parsed.label == "brown_success"
@@ -72,6 +78,16 @@ def test_stage_training_assigns_global_ids_across_duplicate_source_ids(tmp_path)
         )
         == manifest_path
     )
+
+
+def test_stage_training_maps_exported_validation_split_to_val(tmp_path):
+    root = make_exported_root(tmp_path / "exported")
+    output = tmp_path / "stage"
+    manifest_path = stage_3dws_training((PackedTrainingRoot("exported", root),), output)
+    manifest = json.loads(manifest_path.read_text())
+    val_record = next(record for record in manifest["episodes"] if record["split"] == "val")
+    assert val_record["source_split"] == "validation"
+    assert (output / "packed" / "val" / "episode_000001.hdf5").is_symlink()
 
 
 def test_stage_training_rejects_bbox_mismatch(tmp_path):

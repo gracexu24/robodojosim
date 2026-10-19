@@ -122,6 +122,8 @@ workspace bounds. RoboDojoSim provides a plain bottle recipe that consumes only 
 
 First stage every packed category and side order. Labels must be unique. The command creates only lightweight
 symlinks and assigns one global episode ID space, so roots that each contain `episode_0.hdf5` cannot collide:
+The exporter names its held-out split `validation/`; staging maps that directory to the upstream 3DWS `val/`
+contract automatically (and continues to accept an existing `val/` directory).
 
 ```bash
 robodojosim stage-3dws-training \

@@ -39,12 +39,16 @@ PY
 for entry in "${ROOTS[@]}"; do
   IFS=$'\t' read -r label packed_root <<<"$entry"
   for split in train val; do
+    source_split=$split
+    if [[ $split == val && -d "$packed_root/validation" ]]; then
+      source_split=validation
+    fi
     output=$RAW_LATENT_ROOT/$label/$split
     mkdir -p "$output"
     CMD=(python -m scripts.export_latents
       --dataset robodojo_two_color_bottles
       --vae-ckpt "$VAE_CHECKPOINT"
-      --packed-dir "$packed_root/$split"
+      --packed-dir "$packed_root/$source_split"
       --out-dir "$output"
       --action cartesian
       --n-encodings "$N_ENCODINGS"

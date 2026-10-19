@@ -114,7 +114,8 @@ def stage_3dws_training(
         if not root.path.is_dir():
             raise FileNotFoundError(f"packed root does not exist: {root.path}")
         for split in ("train", "val"):
-            split_dir = root.path / split
+            source_split = "validation" if split == "val" and (root.path / "validation").is_dir() else split
+            split_dir = root.path / source_split
             episodes = sorted(split_dir.glob("episode_*.hdf5"), key=_episode_number)
             if not episodes:
                 raise FileNotFoundError(f"no packed episodes under {split_dir}")
@@ -133,6 +134,7 @@ def stage_3dws_training(
                         "label": root.label,
                         "root": str(root.path),
                         "split": split,
+                        "source_split": source_split,
                         "source": str(source.resolve()),
                         "staged": str(destination),
                         **metadata,
