@@ -178,4 +178,5 @@ bash scripts/train_3dws_bottle_dynamics.sh \
 The checked-in baseline is summarized in `configs/training_3dws_bottles.json`. It uses 8 history frames and an
 autoregressive 1-to-15-step curriculum at 10 Hz. W&B is off unless `ROBODOJOSIM_3DWS_WANDB=1`. Both launchers save
 their exact command and copy the staging manifest into the model directory. Existing `latest.pth` checkpoints are
-resumed rather than overwritten.
+resumed rather than overwritten. The launchers set `PYTHONNOUSERSITE=1`, so install all dependencies in the active
+3DWS environment instead of relying on packages under `~/.local`.
