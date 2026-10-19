@@ -79,6 +79,8 @@ def test_enhanced_recording_exports_exact_3dws_packed_contract(tmp_path):
     assert validate_3dws_packed(packed) == []
     with h5py.File(packed, "r") as handle:
         assert handle.attrs["format_version"] == "packed_v2"
+        assert handle.attrs["depth_semantics"] == "full_scene_lrc"
+        assert handle.attrs["depth_source"] == "isaac_sim_ground_truth"
         assert handle["action/cartesian_action"].shape == (3, 14)
         assert handle["robot/joint_pos"].shape == (3, 14)
         assert handle["img/camera_0/depth"].shape == (3, 4, 6)

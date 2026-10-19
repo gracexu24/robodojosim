@@ -451,7 +451,14 @@ def export_3dws_episode(
             source_action_layout="per-arm xyz+quaternion_wxyz+gripper",
             source_frequency=float(source_file["additional_info/frequency"][()]),
             frequency=float(config.target_fps),
-            depth_semantics="full_scene_metric_distance_to_image_plane; 0=invalid",
+            # Upstream 3DWS uses this exact contract marker before initializing
+            # its static background bank.  Isaac Sim supplies full-scene metric
+            # ground-truth depth, so it satisfies the geometric contract without
+            # requiring the stereo left-right-consistency filtering that produced
+            # the original real-camera packs.
+            depth_semantics="full_scene_lrc",
+            depth_source="isaac_sim_ground_truth",
+            depth_semantics_detail="metric distance-to-image-plane; 0=invalid; simulator ground truth",
             rgb_depth_alignment="same simulated pinhole camera; T_rgb_to_ir=identity",
             extrinsic_semantics="OpenCV camera_to_world (+x right,+y down,+z forward)",
             mask_semantics="valid=finite_positive_depth&world_bbox; obj=privileged local-AABB labels",
