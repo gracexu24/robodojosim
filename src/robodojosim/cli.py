@@ -20,6 +20,7 @@ from .world_model_export import (
     WorldModelExportConfig,
     export_3dws_dataset,
     inspect_3dws_episode,
+    upgrade_3dws_sim_depth_metadata,
     validate_3dws_packed,
 )
 from .world_model_qa import analyze_3dws_quality, render_3dws_review
@@ -242,6 +243,17 @@ def _validate_3dws(args: argparse.Namespace) -> int:
         print(f"{path}: {'OK' if not errors else '; '.join(errors)}")
         failed = failed or bool(errors)
     return int(failed or not paths)
+
+
+def _upgrade_3dws_depth_metadata(args: argparse.Namespace) -> int:
+    totals = {"checked": 0, "upgraded": 0, "current": 0}
+    for name in args.paths:
+        result = upgrade_3dws_sim_depth_metadata(name, dry_run=args.dry_run)
+        for key in totals:
+            totals[key] += result[key]
+    totals["dry_run"] = args.dry_run
+    print(json.dumps(totals, indent=2, sort_keys=True))
+    return 0
 
 
 def _configure_world_model(args: argparse.Namespace) -> int:
@@ -559,6 +571,13 @@ def build_parser() -> argparse.ArgumentParser:
     validate_3dws = subparsers.add_parser("validate-3dws", help="validate one or more packed_v2 episode files")
     validate_3dws.add_argument("paths", nargs="+")
     validate_3dws.set_defaults(func=_validate_3dws)
+    upgrade_depth = subparsers.add_parser(
+        "upgrade-3dws-depth-metadata",
+        help="upgrade legacy RoboDojo simulator packs to the upstream full-scene depth marker",
+    )
+    upgrade_depth.add_argument("paths", nargs="+")
+    upgrade_depth.add_argument("--dry-run", action="store_true")
+    upgrade_depth.set_defaults(func=_upgrade_3dws_depth_metadata)
     review_3dws = subparsers.add_parser(
         "review-3dws",
         help="run numerical quality gates and render an RGB/depth/mask review video",

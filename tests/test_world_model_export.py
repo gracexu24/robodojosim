@@ -8,6 +8,7 @@ from robodojosim.world_model_export import (
     WorldModelExportConfig,
     export_3dws_dataset,
     inspect_3dws_episode,
+    upgrade_3dws_sim_depth_metadata,
     validate_3dws_packed,
 )
 from robodojosim.world_model_qa import analyze_3dws_quality, render_3dws_review
@@ -94,6 +95,37 @@ def test_enhanced_recording_exports_exact_3dws_packed_contract(tmp_path):
     assert review.stat().st_size > 0
     manifest = json.loads((output / "export_manifest.json").read_text())
     assert manifest["episodes"][0]["has_object_masks"] is True
+
+
+def test_upgrade_legacy_sim_depth_metadata_is_guarded_and_idempotent(tmp_path):
+    source_dir = tmp_path / "source"
+    _enhanced_episode(source_dir)
+    output = tmp_path / "packed"
+    export_3dws_dataset(
+        source_dir,
+        output,
+        WorldModelExportConfig(
+            bbox=(-1.0, 1.0, -1.0, 1.0, 0.5, 1.5),
+            target_fps=10,
+            source_camera_axes="opencv",
+        ),
+    )
+    packed = output / "train" / "episode_7.hdf5"
+    legacy = "full_scene_metric_distance_to_image_plane; 0=invalid"
+    with h5py.File(packed, "r+") as handle:
+        handle.attrs["depth_semantics"] = legacy
+        del handle.attrs["depth_source"]
+    assert "depth_semantics is not full_scene_lrc" in validate_3dws_packed(packed)
+    assert upgrade_3dws_sim_depth_metadata(output, dry_run=True) == {
+        "checked": 1,
+        "upgraded": 1,
+        "current": 0,
+    }
+    with h5py.File(packed, "r") as handle:
+        assert handle.attrs["depth_semantics"] == legacy
+    assert upgrade_3dws_sim_depth_metadata(output) == {"checked": 1, "upgraded": 1, "current": 0}
+    assert validate_3dws_packed(packed) == []
+    assert upgrade_3dws_sim_depth_metadata(output) == {"checked": 1, "upgraded": 0, "current": 1}
 
 
 def test_rgb_only_episode_reports_geometry_blockers(tmp_path):

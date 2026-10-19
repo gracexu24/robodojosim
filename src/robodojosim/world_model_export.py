@@ -533,6 +533,8 @@ def validate_3dws_packed(path: str | Path) -> list[str]:
         with h5py.File(path, "r") as handle:
             if handle.attrs.get("format_version", "") != "packed_v2":
                 errors.append("format_version is not packed_v2")
+            if handle.attrs.get("depth_semantics", "") != "full_scene_lrc":
+                errors.append("depth_semantics is not full_scene_lrc")
             frames = int(handle.attrs.get("num_frames", 0))
             camera_ids = [int(value) for value in handle.attrs.get("cam_ids", [])]
             if frames <= 0:
@@ -560,3 +562,40 @@ def validate_3dws_packed(path: str | Path) -> list[str]:
     except OSError as exc:
         errors.append(f"cannot open HDF5: {exc}")
     return errors
+
+
+def upgrade_3dws_sim_depth_metadata(path: str | Path, *, dry_run: bool = False) -> dict[str, int]:
+    """Upgrade legacy RoboDojo simulator packs to the upstream 3DWS depth marker.
+
+    This changes HDF5 attributes only.  It refuses unknown formats, datasets,
+    or depth semantics so it cannot silently relabel real-camera depth.
+    """
+    candidate = Path(path)
+    paths = sorted(candidate.glob("**/episode_*.hdf5")) if candidate.is_dir() else [candidate]
+    if not paths or any(not item.is_file() for item in paths):
+        raise FileNotFoundError(f"no packed episodes found under {candidate}")
+    legacy = "full_scene_metric_distance_to_image_plane; 0=invalid"
+    counts = {"checked": 0, "upgraded": 0, "current": 0}
+    for episode in paths:
+        mode = "r" if dry_run else "r+"
+        with h5py.File(episode, mode) as handle:
+            if handle.attrs.get("format_version", "") != "packed_v2":
+                raise ValueError(f"{episode} is not packed_v2")
+            if handle.attrs.get("dataset", "") != "robodojosim_two_bottle":
+                raise ValueError(f"{episode} is not a RoboDojo two-bottle simulator pack")
+            semantics = str(handle.attrs.get("depth_semantics", ""))
+            if semantics == "full_scene_lrc":
+                counts["current"] += 1
+            elif semantics == legacy:
+                counts["upgraded"] += 1
+                if not dry_run:
+                    handle.attrs["previous_depth_semantics"] = legacy
+                    handle.attrs["depth_semantics"] = "full_scene_lrc"
+                    handle.attrs["depth_source"] = "isaac_sim_ground_truth"
+                    handle.attrs["depth_semantics_detail"] = (
+                        "metric distance-to-image-plane; 0=invalid; simulator ground truth"
+                    )
+            else:
+                raise ValueError(f"{episode} has unsupported depth semantics {semantics!r}")
+            counts["checked"] += 1
+    return counts
