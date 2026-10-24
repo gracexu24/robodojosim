@@ -32,6 +32,13 @@ the most recent timestamped directory in:
   future step. A short key press always produces one step; holding repeats at
   the selected Hz.
 - `Predict one future` advances the frozen dynamics model one 10 Hz step.
+- Keyboard control defaults to `Stable one-step preview`: every changed target
+  is evaluated from the same eight real held-out history frames with a fixed
+  future-noise seed. This isolates the left/right command response and avoids
+  accumulating open-loop drift while teleoperating.
+- `Autoregressive imagination` remains available for continuous free-running
+  rollouts. The model was trained through 16 consecutive predicted steps, so
+  the viewer visibly warns when that horizon is exceeded.
 - `Autoplay predictions` repeatedly advances with the current target.
 - `Recorded validation actions` replays the held-out episode's real action
   sequence through the world model. `Play recorded held-out sequence` starts it

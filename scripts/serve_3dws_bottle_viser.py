@@ -60,6 +60,8 @@ POINT_CLOUD_MODE = "Point cloud (interactive 3D)"
 NATIVE_SPLAT_MODE = "Native 3D Gaussian splats"
 FIXED_GAUSSIAN_MODE = "Exact Gaussian render (fixed camera)"
 TRACKED_GAUSSIAN_MODE = "Exact Gaussian render (track orbit camera)"
+ANCHORED_TELEOP_MODE = "Stable one-step preview (recommended)"
+AUTOREGRESSIVE_TELEOP_MODE = "Autoregressive imagination"
 
 
 def apply_keyboard_action(
@@ -498,16 +500,26 @@ class FrozenWorldModel:
         latent_history: torch.Tensor,
         action_history: torch.Tensor,
         next_action: torch.Tensor,
+        noise_seed: int | None = None,
     ) -> torch.Tensor:
-        with torch.autocast("cuda", dtype=torch.bfloat16):
-            return self.predict_chunk_inf(
-                self.model,
-                latent_history,
-                action_history,
-                next_action,
-                self.device,
-                hist_noise=self.hist_noise,
-            ).float()
+        def infer() -> torch.Tensor:
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                return self.predict_chunk_inf(
+                    self.model,
+                    latent_history,
+                    action_history,
+                    next_action,
+                    self.device,
+                    hist_noise=self.hist_noise,
+                ).float()
+
+        if noise_seed is None:
+            return infer()
+        # Keyboard previews should change because of the command, not because a
+        # new random future slot was sampled. Preserve the process RNG state.
+        with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+            torch.manual_seed(int(noise_seed))
+            return infer()
 
     @torch.no_grad()
     def decode(self, latent: torch.Tensor):
@@ -639,6 +651,11 @@ class BottleViewer:
                 options=("Keyboard teleoperation", "Recorded validation actions"),
                 initial_value="Keyboard teleoperation",
             )
+            self.teleop_mode = gui.add_dropdown(
+                "keyboard prediction mode",
+                options=(ANCHORED_TELEOP_MODE, AUTOREGRESSIVE_TELEOP_MODE),
+                initial_value=ANCHORED_TELEOP_MODE,
+            )
             self.clamp_widget = gui.add_checkbox("Clamp to held-out action range", True)
             self.step_button = gui.add_button("Predict one future", color="blue")
             self.play_recorded_button = gui.add_button(
@@ -649,7 +666,7 @@ class BottleViewer:
             self.hz_widget = gui.add_slider("autoplay Hz", 1.0, 10.0, 1.0, 5.0)
         with gui.add_folder("Action target", expand_by_default=True):
             self.step_size_widget = gui.add_slider(
-                "keyboard Cartesian step (m)", 0.001, 0.02, 0.001, 0.005
+                "keyboard Cartesian step (m)", 0.001, 0.02, 0.001, 0.01
             )
             self.keyboard_state = gui.add_text("held keys", "none", disabled=True)
             self.target_position_text = gui.add_text(
@@ -657,6 +674,11 @@ class BottleViewer:
             )
             self.workspace_warning = gui.add_text(
                 "workspace limits", "inside training workspace", disabled=True
+            )
+            self.prediction_regime = gui.add_text(
+                "prediction regime",
+                "stable one-step preview from real held-out history",
+                disabled=True,
             )
             self.action_text = gui.add_text("14D target", "", disabled=True)
         with gui.add_folder("Rendering", expand_by_default=False):
@@ -699,6 +721,7 @@ class BottleViewer:
             with self.lock:
                 self.play_widget.value = False
                 self.action_source.value = "Keyboard teleoperation"
+                self.teleop_mode.value = ANCHORED_TELEOP_MODE
                 self.pending_reset = True
                 self.last_workspace_warning = "teleop reset to held-out history"
 
@@ -717,6 +740,17 @@ class BottleViewer:
         def _(_event):
             with self.lock:
                 self.play_widget.value = False
+
+        @self.teleop_mode.on_update
+        def _(_event):
+            if self.teleop_mode.value == ANCHORED_TELEOP_MODE:
+                self.prediction_regime.value = (
+                    "stable one-step preview; Reset before teleop for a fresh anchor"
+                )
+            else:
+                self.prediction_regime.value = (
+                    "autoregressive imagination; reliable training horizon is 16 steps"
+                )
 
         @self.display_mode_widget.on_update
         def _(_event):
@@ -992,7 +1026,10 @@ class BottleViewer:
         self.action_history = torch.stack(
             [self.world.normalize_action(item) for item in action[start:stop]], dim=0
         )[None]
+        self.seed_latent_history = self.latent_history.clone()
+        self.seed_action_history = self.action_history.clone()
         self.predicted_steps = 0
+        self.last_prediction_anchored = False
         self.desired_action = action[stop].copy()
         self.last_workspace_warning = "inside training workspace (fresh held-out history)"
         self.cameras = self._fixed_cameras()
@@ -1019,13 +1056,29 @@ class BottleViewer:
         if action is None:
             return False
         next_action = self.world.normalize_action(action)[None, None]
+        anchored = (
+            self.action_source.value == "Keyboard teleoperation"
+            and self.teleop_mode.value == ANCHORED_TELEOP_MODE
+        )
+        latent_history = self.seed_latent_history if anchored else self.latent_history
+        action_history = self.seed_action_history if anchored else self.action_history
         start_time = time.perf_counter()
-        predicted = self.world.step(self.latent_history, self.action_history, next_action)
-        self.latent_history = torch.cat([self.latent_history[:, 1:], predicted], dim=1)
-        self.action_history = torch.cat([self.action_history[:, 1:], next_action], dim=1)
+        predicted = self.world.step(
+            latent_history,
+            action_history,
+            next_action,
+            noise_seed=20261024 if anchored else None,
+        )
+        if not anchored:
+            self.latent_history = torch.cat([self.latent_history[:, 1:], predicted], dim=1)
+            self.action_history = torch.cat([self.action_history[:, 1:], next_action], dim=1)
         self.predicted_steps += 1
+        self.last_prediction_anchored = anchored
         self.last_step_seconds = time.perf_counter() - start_time
-        self._update_scene(predicted[0, 0], label="predicted future")
+        self._update_scene(
+            predicted[0, 0],
+            label="stable teleop preview" if anchored else "predicted future",
+        )
         return True
 
     def _update_scene(self, latent: torch.Tensor, label: str) -> None:
@@ -1049,10 +1102,34 @@ class BottleViewer:
             self.pending_camera_render = True
         self._apply_display_mode()
         total_seconds = time.perf_counter() - start_time
-        dataset_frame = self.seed_frame + self.world.n_history - 1 + self.predicted_steps
+        if self.predicted_steps == 0:
+            dataset_frame = self.seed_frame + self.world.n_history - 1
+            progress = "future step 0"
+            self.prediction_regime.value = (
+                "stable one-step preview from real held-out history"
+                if self.teleop_mode.value == ANCHORED_TELEOP_MODE
+                else "autoregressive imagination, horizon 0/16"
+            )
+        elif self.last_prediction_anchored:
+            dataset_frame = self.seed_frame + self.world.n_history
+            progress = f"preview {self.predicted_steps}, model horizon 1"
+            self.prediction_regime.value = (
+                "stable one-step preview from real held-out history"
+            )
+        else:
+            dataset_frame = self.seed_frame + self.world.n_history - 1 + self.predicted_steps
+            progress = f"future step {self.predicted_steps}"
+            if self.predicted_steps > 16:
+                self.prediction_regime.value = (
+                    f"⚠ {self.predicted_steps}-step open loop; trained through 16 steps"
+                )
+            else:
+                self.prediction_regime.value = (
+                    f"autoregressive imagination, horizon {self.predicted_steps}/16"
+                )
         self.status_widget.value = (
             f"{label} | episode {self.episode_id}, dataset frame {dataset_frame}, "
-            f"future step {self.predicted_steps} | {len(xyz):,} foreground gaussians "
+            f"{progress} | {len(xyz):,} foreground gaussians "
             f"({len(indices):,} shown) | dynamics {1000 * self.last_step_seconds:.0f} ms, "
             f"decode+publish {1000 * total_seconds:.0f} ms"
         )
@@ -1210,6 +1287,7 @@ class BottleViewer:
             "episode": self.episode_id,
             "seed_frame": self.seed_frame,
             "predicted_steps": self.predicted_steps,
+            "model_horizon": 1 if self.last_prediction_anchored else self.predicted_steps,
             "foreground_points": int(len(self.foreground_handle.points)),
             "native_splats": int(
                 min(len(self.last_gaussians["xyz"]), self.args.max_gaussian_splats)
