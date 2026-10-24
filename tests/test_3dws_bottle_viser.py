@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -6,8 +7,11 @@ from scripts.serve_3dws_bottle_viser import (
     apply_keyboard_action,
     action_to_poses,
     bbox_segments,
+    blocked_keyboard_axes,
+    camera_to_renderer,
     clamp_action,
     evenly_sample,
+    gaussian_covariances,
     update_action_pose,
 )
 
@@ -66,6 +70,35 @@ class ViewerUtilityTests(unittest.TestCase):
             np.full(14, -1.0), np.full(14, 1.0)
         )
         self.assertTrue(np.allclose(moved, action))
+
+    def test_workspace_limit_warning_names_blocked_axis(self):
+        action = np.zeros(14)
+        lower = np.full(14, -1.0)
+        upper = np.full(14, 1.0)
+        action[0] = lower[0]
+        action[9] = upper[9]
+        blocked = blocked_keyboard_axes(action, {"KeyA", "KeyI", "KeyD"}, lower, upper)
+        self.assertEqual(blocked, ["left x minimum (A)", "right z maximum (I)"])
+
+    def test_gaussian_covariance_respects_scale_and_rotation(self):
+        scale = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+        identity = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        covariance = gaussian_covariances(scale, identity)
+        self.assertTrue(np.allclose(covariance[0], np.diag([1.0, 4.0, 9.0])))
+
+    def test_viser_camera_conversion_is_opencv_world_to_camera(self):
+        camera = SimpleNamespace(
+            image_width=800,
+            image_height=400,
+            aspect=2.0,
+            fov=np.pi / 2,
+            wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
+            position=np.array([1.0, 2.0, 3.0]),
+        )
+        converted = camera_to_renderer(camera, max_width=640)
+        self.assertEqual((converted["W"], converted["H"]), (640, 320))
+        self.assertTrue(np.allclose(converted["viewmat"][:3, 3], [-1, -2, -3]))
+        self.assertAlmostEqual(float(converted["K"][0, 0]), 160.0, places=5)
 
 
 if __name__ == "__main__":

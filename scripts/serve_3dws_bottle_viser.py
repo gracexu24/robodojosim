@@ -57,7 +57,9 @@ KEYBOARD_DELTAS = {
 }
 
 POINT_CLOUD_MODE = "Point cloud (interactive 3D)"
-GAUSSIAN_MODE = "Exact Gaussian render (fixed camera)"
+NATIVE_SPLAT_MODE = "Native 3D Gaussian splats"
+FIXED_GAUSSIAN_MODE = "Exact Gaussian render (fixed camera)"
+TRACKED_GAUSSIAN_MODE = "Exact Gaussian render (track orbit camera)"
 
 
 def apply_keyboard_action(
@@ -76,6 +78,89 @@ def apply_keyboard_action(
             index, direction = update
             out[index] += float(step) * direction
     return clamp_action(out, lower, upper) if clamp else out
+
+
+def blocked_keyboard_axes(
+    action: np.ndarray,
+    keys: set[str],
+    lower: np.ndarray,
+    upper: np.ndarray,
+    tolerance: float = 1e-7,
+) -> list[str]:
+    """Describe held Cartesian keys that are pushing past the data envelope."""
+    action = np.asarray(action, dtype=np.float64)
+    lower = np.asarray(lower, dtype=np.float64)
+    upper = np.asarray(upper, dtype=np.float64)
+    labels = {
+        0: "left x", 1: "left y", 2: "left z",
+        7: "right x", 8: "right y", 9: "right z",
+    }
+    blocked = []
+    for key in sorted(keys):
+        update = KEYBOARD_DELTAS.get(key)
+        if update is None:
+            continue
+        index, direction = update
+        at_limit = (
+            direction < 0 and action[index] <= lower[index] + tolerance
+        ) or (
+            direction > 0 and action[index] >= upper[index] - tolerance
+        )
+        if at_limit:
+            side = "minimum" if direction < 0 else "maximum"
+            blocked.append(f"{labels[index]} {side} ({key[3:]})")
+    return blocked
+
+
+def quaternion_rotation_matrices(wxyz: np.ndarray) -> np.ndarray:
+    """Convert an array of scalar-first quaternions to rotation matrices."""
+    quaternion = np.asarray(wxyz, dtype=np.float32)
+    if quaternion.ndim != 2 or quaternion.shape[1] != 4:
+        raise ValueError(f"expected (N,4) quaternions, got {quaternion.shape}")
+    norm = np.linalg.norm(quaternion, axis=1, keepdims=True)
+    quaternion = quaternion / np.maximum(norm, 1e-12)
+    w, x, y, z = quaternion.T
+    matrices = np.empty((len(quaternion), 3, 3), dtype=np.float32)
+    matrices[:, 0, 0] = 1 - 2 * (y * y + z * z)
+    matrices[:, 0, 1] = 2 * (x * y - z * w)
+    matrices[:, 0, 2] = 2 * (x * z + y * w)
+    matrices[:, 1, 0] = 2 * (x * y + z * w)
+    matrices[:, 1, 1] = 1 - 2 * (x * x + z * z)
+    matrices[:, 1, 2] = 2 * (y * z - x * w)
+    matrices[:, 2, 0] = 2 * (x * z - y * w)
+    matrices[:, 2, 1] = 2 * (y * z + x * w)
+    matrices[:, 2, 2] = 1 - 2 * (x * x + y * y)
+    return matrices
+
+
+def gaussian_covariances(scale: np.ndarray, wxyz: np.ndarray) -> np.ndarray:
+    """Convert Gaussian principal scales and orientations to world covariance."""
+    scale = np.asarray(scale, dtype=np.float32)
+    if scale.ndim != 2 or scale.shape[1] != 3:
+        raise ValueError(f"expected (N,3) scales, got {scale.shape}")
+    rotation = quaternion_rotation_matrices(wxyz)
+    scaled_rotation = rotation * scale[:, None, :]
+    return scaled_rotation @ np.transpose(scaled_rotation, (0, 2, 1))
+
+
+def camera_to_renderer(camera, max_width: int = 640) -> dict:
+    """Convert a Viser OpenCV camera pose into the gsplat camera contract."""
+    width = max(2, min(int(camera.image_width), int(max_width)))
+    aspect = max(float(camera.aspect), 1e-6)
+    height = max(2, int(round(width / aspect)))
+    rotation_world_camera = transforms3d.quaternions.quat2mat(
+        np.asarray(camera.wxyz, dtype=np.float64)
+    )
+    transform_world_camera = np.eye(4, dtype=np.float32)
+    transform_world_camera[:3, :3] = rotation_world_camera.astype(np.float32)
+    transform_world_camera[:3, 3] = np.asarray(camera.position, dtype=np.float32)
+    viewmat = np.linalg.inv(transform_world_camera).astype(np.float32)
+    focal = 0.5 * height / np.tan(0.5 * float(camera.fov))
+    intrinsics = np.array(
+        [[focal, 0.0, width / 2.0], [0.0, focal, height / 2.0], [0.0, 0.0, 1.0]],
+        dtype=np.float32,
+    )
+    return {"viewmat": viewmat, "K": intrinsics, "W": width, "H": height}
 
 
 KEYBOARD_CLIENT_SCRIPT = r"""
@@ -500,9 +585,13 @@ class BottleViewer:
         self.syncing_controls = False
         self.pending_steps = 0
         self.pending_reset = True
+        self.pending_camera_render = False
+        self.tracked_camera = None
         self.running = True
         self.last_step_seconds = 0.0
         self.last_keyboard_step = time.monotonic()
+        self.last_camera_render = 0.0
+        self.last_workspace_warning = "inside training workspace"
         self.world = FrozenWorldModel(
             args.threedws_root, args.dynamics_checkpoint, "cuda", args.bf16
         )
@@ -542,6 +631,9 @@ class BottleViewer:
                 "seed start frame", initial_value=self.args.frame, min=0, step=1
             )
             self.reset_button = gui.add_button("Reset from held-out history", color="red")
+            self.reset_teleop_button = gui.add_button(
+                "Reset before teleop", color="orange"
+            )
             self.action_source = gui.add_dropdown(
                 "action source",
                 options=("Keyboard teleoperation", "Recorded validation actions"),
@@ -560,11 +652,22 @@ class BottleViewer:
                 "keyboard Cartesian step (m)", 0.001, 0.02, 0.001, 0.005
             )
             self.keyboard_state = gui.add_text("held keys", "none", disabled=True)
+            self.target_position_text = gui.add_text(
+                "visible targets", "loading", disabled=True
+            )
+            self.workspace_warning = gui.add_text(
+                "workspace limits", "inside training workspace", disabled=True
+            )
             self.action_text = gui.add_text("14D target", "", disabled=True)
         with gui.add_folder("Rendering", expand_by_default=False):
             self.display_mode_widget = gui.add_dropdown(
                 "display mode",
-                options=(POINT_CLOUD_MODE, GAUSSIAN_MODE),
+                options=(
+                    POINT_CLOUD_MODE,
+                    NATIVE_SPLAT_MODE,
+                    FIXED_GAUSSIAN_MODE,
+                    TRACKED_GAUSSIAN_MODE,
+                ),
                 initial_value=POINT_CLOUD_MODE,
             )
             self.reset_camera_button = gui.add_button("Frame predicted world")
@@ -578,6 +681,9 @@ class BottleViewer:
             self.camera_widget = gui.add_dropdown(
                 "exact render camera", options=("cam0", "cam1", "cam2", "cam3"), initial_value="cam0"
             )
+            self.tracked_fps_widget = gui.add_slider(
+                "tracked exact render FPS", 1.0, 15.0, 1.0, 8.0
+            )
             self.render_image = gui.add_image(
                 np.zeros((240, 320, 3), dtype=np.uint8), label="Exact gaussian render", format="jpeg"
             )
@@ -587,6 +693,14 @@ class BottleViewer:
         def _(_event):
             with self.lock:
                 self.pending_reset = True
+
+        @self.reset_teleop_button.on_click
+        def _(_event):
+            with self.lock:
+                self.play_widget.value = False
+                self.action_source.value = "Keyboard teleoperation"
+                self.pending_reset = True
+                self.last_workspace_warning = "teleop reset to held-out history"
 
         @self.step_button.on_click
         def _(_event):
@@ -607,6 +721,13 @@ class BottleViewer:
         @self.display_mode_widget.on_update
         def _(_event):
             with self.lock:
+                if (
+                    self.display_mode_widget.value == NATIVE_SPLAT_MODE
+                    and getattr(self, "last_gaussians", None) is not None
+                ):
+                    self._update_native_splats(self.last_gaussians)
+                if self.display_mode_widget.value == TRACKED_GAUSSIAN_MODE:
+                    self.pending_camera_render = True
                 self._apply_display_mode()
 
         @self.show_bg_widget.on_update
@@ -625,7 +746,7 @@ class BottleViewer:
         def _(_event):
             with self.lock:
                 if getattr(self, "last_gaussians", None) is not None:
-                    self._update_exact_render(self.last_gaussians)
+                    self._update_fixed_exact_render(self.last_gaussians)
 
         @self.reset_camera_button.on_click
         def _(_event):
@@ -664,13 +785,46 @@ class BottleViewer:
             point_shape="circle",
             precision="float32",
         )
+        dummy_center = np.zeros((1, 3), dtype=np.float32)
+        dummy_covariance = np.eye(3, dtype=np.float32)[None] * 1e-8
+        dummy_rgb = np.zeros((1, 3), dtype=np.float32)
+        dummy_opacity = np.zeros((1, 1), dtype=np.float32)
+        self.foreground_splat_handle = self.server.scene.add_gaussian_splats(
+            "/predicted_world/native_foreground",
+            dummy_center,
+            dummy_covariance,
+            dummy_rgb,
+            dummy_opacity,
+            visible=False,
+        )
+        self.background_splat_handle = self.server.scene.add_gaussian_splats(
+            "/predicted_world/native_background",
+            dummy_center,
+            dummy_covariance,
+            dummy_rgb,
+            dummy_opacity,
+            visible=False,
+        )
         if self.world.bg is not None:
             xyz = self.world.bg["xyz"].detach().cpu().numpy()
             rgb = (self.world.bg["rgb01"].clamp(0, 1).detach().cpu().numpy() * 255).astype(np.uint8)
             indices = evenly_sample(len(xyz), self.args.max_background_points)
             self.background_handle.points = xyz[indices]
             self.background_handle.colors = rgb[indices]
+            centers, covariances, colors, opacities = self._gaussian_arrays(
+                self.world.bg, self.args.max_background_splats
+            )
+            self.background_splat_handle = self.server.scene.add_gaussian_splats(
+                "/predicted_world/native_background",
+                centers,
+                covariances,
+                colors,
+                opacities,
+                visible=False,
+            )
         self.action_frames = []
+        self.target_markers = []
+        self.target_labels = []
         for arm, label in enumerate(("left", "right")):
             handle = self.server.scene.add_frame(
                 f"/action_targets/{label}",
@@ -678,6 +832,23 @@ class BottleViewer:
                 axes_radius=0.0025,
             )
             self.action_frames.append(handle)
+            color = (255, 50, 180) if arm == 0 else (30, 220, 255)
+            self.target_markers.append(
+                self.server.scene.add_icosphere(
+                    f"/action_targets/{label}_marker",
+                    radius=0.014,
+                    color=color,
+                    subdivisions=2,
+                )
+            )
+            self.target_labels.append(
+                self.server.scene.add_label(
+                    f"/action_targets/{label}_label",
+                    text=f"{label} target",
+                    anchor="bottom-center",
+                    depth_test=False,
+                )
+            )
 
         self.scene_center = np.array(
             [
@@ -690,6 +861,49 @@ class BottleViewer:
         @self.server.on_client_connect
         def _(client):
             self._set_client_camera(client)
+
+            @client.camera.on_update
+            def _(camera):
+                try:
+                    tracked = camera_to_renderer(camera, self.args.tracked_render_width)
+                except (AssertionError, ValueError, ZeroDivisionError):
+                    return
+                with self.lock:
+                    self.tracked_camera = tracked
+                    self.pending_camera_render = True
+
+    def _gaussian_arrays(self, gaussians, maximum: int):
+        count = int(gaussians["xyz"].shape[0])
+        indices = evenly_sample(count, maximum)
+        indices_t = torch.as_tensor(indices, device=gaussians["xyz"].device)
+        centers = gaussians["xyz"][indices_t].detach().float().cpu().numpy()
+        scales = gaussians["scale"][indices_t].detach().float().cpu().numpy()
+        quaternions = gaussians["quat"][indices_t].detach().float().cpu().numpy()
+        colors = gaussians["rgb01"][indices_t].clamp(0, 1).detach().float().cpu().numpy()
+        opacities = (
+            gaussians["opacity"][indices_t]
+            .reshape(-1, 1)
+            .clamp(0, 1)
+            .detach()
+            .float()
+            .cpu()
+            .numpy()
+        )
+        covariances = gaussian_covariances(scales, quaternions)
+        return centers, covariances, colors, opacities
+
+    def _update_native_splats(self, gaussians) -> None:
+        centers, covariances, colors, opacities = self._gaussian_arrays(
+            gaussians, self.args.max_gaussian_splats
+        )
+        self.foreground_splat_handle = self.server.scene.add_gaussian_splats(
+            "/predicted_world/native_foreground",
+            centers,
+            covariances,
+            colors,
+            opacities,
+            visible=self.display_mode_widget.value == NATIVE_SPLAT_MODE,
+        )
 
     def _set_client_camera(self, client) -> None:
         # Set position before look-at, and publish the camera properties atomically.
@@ -705,6 +919,8 @@ class BottleViewer:
             for arm, (position, wxyz, gripper) in enumerate(action_to_poses(action)):
                 self.action_frames[arm].position = position
                 self.action_frames[arm].wxyz = wxyz
+                self.target_markers[arm].position = position
+                self.target_labels[arm].position = position + np.array([0.0, 0.0, 0.035])
         finally:
             self.syncing_controls = False
         self._update_action_text()
@@ -712,6 +928,13 @@ class BottleViewer:
     def _update_action_text(self) -> None:
         values = ", ".join(f"{value:.3f}" for value in self.desired_action)
         self.action_text.value = f"[{values}]"
+        left = self.desired_action[:3]
+        right = self.desired_action[7:10]
+        self.target_position_text.value = (
+            f"L ({left[0]:+.3f}, {left[1]:+.3f}, {left[2]:+.3f}) m | "
+            f"R ({right[0]:+.3f}, {right[1]:+.3f}, {right[2]:+.3f}) m"
+        )
+        self.workspace_warning.value = self.last_workspace_warning
 
     def _fixed_cameras(self):
         packed_path = self.find_packed(self.episodes.packed_dirs, self.episode_id)
@@ -771,6 +994,7 @@ class BottleViewer:
         )[None]
         self.predicted_steps = 0
         self.desired_action = action[stop].copy()
+        self.last_workspace_warning = "inside training workspace (fresh held-out history)"
         self.cameras = self._fixed_cameras()
         self._sync_action_frames(self.desired_action)
         self._update_scene(self.latent_history[0, -1], label="held-out seed")
@@ -818,7 +1042,11 @@ class BottleViewer:
         self.foreground_handle.points = xyz[indices]
         self.foreground_handle.colors = rgb[indices]
         self.foreground_handle.visible = self.display_mode_widget.value == POINT_CLOUD_MODE
-        self._update_exact_render(gaussians)
+        if self.display_mode_widget.value == NATIVE_SPLAT_MODE:
+            self._update_native_splats(gaussians)
+        self._update_fixed_exact_render(gaussians)
+        if self.display_mode_widget.value == TRACKED_GAUSSIAN_MODE:
+            self.pending_camera_render = True
         self._apply_display_mode()
         total_seconds = time.perf_counter() - start_time
         dataset_frame = self.seed_frame + self.world.n_history - 1 + self.predicted_steps
@@ -829,29 +1057,57 @@ class BottleViewer:
             f"decode+publish {1000 * total_seconds:.0f} ms"
         )
 
-    def _update_exact_render(self, gaussians) -> None:
+    def _update_fixed_exact_render(self, gaussians) -> None:
         index = min(int(self.camera_widget.value[3:]), len(self.cameras) - 1)
         camera = self.cameras[index]
         image = self.world.render(gaussians, camera, camera["W"], camera["H"])
-        self.last_exact_image = image
+        self.last_fixed_exact_image = image
         self.render_image.image = image
-        if self.display_mode_widget.value == GAUSSIAN_MODE:
+        if self.display_mode_widget.value == FIXED_GAUSSIAN_MODE:
             self.server.scene.set_background_image(image, format="jpeg", jpeg_quality=90)
 
+    def _update_tracked_exact_render(self) -> None:
+        if self.tracked_camera is None or getattr(self, "last_gaussians", None) is None:
+            return
+        camera = self.tracked_camera
+        image = self.world.render(
+            self.last_gaussians, camera, camera["W"], camera["H"]
+        )
+        self.last_tracked_exact_image = image
+        self.render_image.image = image
+        if self.display_mode_widget.value == TRACKED_GAUSSIAN_MODE:
+            self.server.scene.set_background_image(image, format="jpeg", jpeg_quality=88)
+        self.last_camera_render = time.monotonic()
+
     def _apply_display_mode(self) -> None:
-        """Switch the main viewport between 3D points and the exact camera render."""
-        exact = self.display_mode_widget.value == GAUSSIAN_MODE
-        self.foreground_handle.visible = not exact and getattr(self, "last_gaussians", None) is not None
-        self.background_handle.visible = not exact and bool(self.show_bg_widget.value)
-        self.grid_handle.visible = not exact
-        self.bounds_handle.visible = not exact
-        for handle in self.action_frames:
-            handle.visible = not exact
-        if exact and getattr(self, "last_exact_image", None) is not None:
+        """Switch among interactive points, native splats, and exact raster modes."""
+        mode = self.display_mode_widget.value
+        points = mode == POINT_CLOUD_MODE
+        splats = mode == NATIVE_SPLAT_MODE
+        fixed = mode == FIXED_GAUSSIAN_MODE
+        tracked = mode == TRACKED_GAUSSIAN_MODE
+        three_dimensional = points or splats
+        has_scene = getattr(self, "last_gaussians", None) is not None
+        self.foreground_handle.visible = points and has_scene
+        self.background_handle.visible = points and bool(self.show_bg_widget.value)
+        self.foreground_splat_handle.visible = splats and has_scene
+        self.background_splat_handle.visible = splats and bool(self.show_bg_widget.value)
+        self.grid_handle.visible = three_dimensional
+        self.bounds_handle.visible = three_dimensional
+        targets_visible = three_dimensional or tracked
+        for handles in (self.action_frames, self.target_markers, self.target_labels):
+            for handle in handles:
+                handle.visible = targets_visible
+        if fixed and getattr(self, "last_fixed_exact_image", None) is not None:
             self.server.scene.set_background_image(
-                self.last_exact_image, format="jpeg", jpeg_quality=90
+                self.last_fixed_exact_image, format="jpeg", jpeg_quality=90
             )
-        elif not exact:
+        elif tracked:
+            image = getattr(self, "last_tracked_exact_image", None)
+            if image is not None:
+                self.server.scene.set_background_image(image, format="jpeg", jpeg_quality=88)
+            self.pending_camera_render = True
+        else:
             self.server.scene.set_background_image(None)
 
     def _apply_keyboard_tap(self, key: str) -> bool:
@@ -859,6 +1115,21 @@ class BottleViewer:
         if key in KEYBOARD_DELTAS:
             self.play_widget.value = False
             self.action_source.value = "Keyboard teleoperation"
+            blocked = (
+                blocked_keyboard_axes(
+                    self.desired_action,
+                    {key},
+                    self.episodes.action_min,
+                    self.episodes.action_max,
+                )
+                if self.clamp_widget.value
+                else []
+            )
+            self.last_workspace_warning = (
+                "⚠ blocked at " + ", ".join(blocked)
+                if blocked
+                else "inside training workspace"
+            )
             self.desired_action = apply_keyboard_action(
                 self.desired_action,
                 {key},
@@ -873,11 +1144,13 @@ class BottleViewer:
         if key == "KeyG":
             self.desired_action[6] = 0.0 if self.desired_action[6] > 0.5 else 1.0
             self.action_source.value = "Keyboard teleoperation"
+            self.last_workspace_warning = "inside training workspace"
             self._sync_action_frames(self.desired_action)
             return True
         if key == "KeyH":
             self.desired_action[13] = 0.0 if self.desired_action[13] > 0.5 else 1.0
             self.action_source.value = "Keyboard teleoperation"
+            self.last_workspace_warning = "inside training workspace"
             self._sync_action_frames(self.desired_action)
             return True
         if key == "KeyR":
@@ -901,6 +1174,21 @@ class BottleViewer:
         if held and now - self.last_keyboard_step >= 1.0 / float(self.hz_widget.value):
             self.play_widget.value = False
             self.action_source.value = "Keyboard teleoperation"
+            blocked = (
+                blocked_keyboard_axes(
+                    self.desired_action,
+                    held,
+                    self.episodes.action_min,
+                    self.episodes.action_max,
+                )
+                if self.clamp_widget.value
+                else []
+            )
+            self.last_workspace_warning = (
+                "⚠ blocked at " + ", ".join(blocked)
+                if blocked
+                else "inside training workspace"
+            )
             self.desired_action = apply_keyboard_action(
                 self.desired_action,
                 held,
@@ -916,12 +1204,16 @@ class BottleViewer:
 
     def smoke_test(self) -> dict:
         self.predict_once()
+        self._update_native_splats(self.last_gaussians)
         image = np.asarray(self.render_image.image)
         return {
             "episode": self.episode_id,
             "seed_frame": self.seed_frame,
             "predicted_steps": self.predicted_steps,
             "foreground_points": int(len(self.foreground_handle.points)),
+            "native_splats": int(
+                min(len(self.last_gaussians["xyz"]), self.args.max_gaussian_splats)
+            ),
             "render_shape": list(image.shape),
             "render_finite": bool(np.isfinite(image).all()),
             "checkpoint": str(self.world.checkpoint_path),
@@ -936,6 +1228,7 @@ class BottleViewer:
         )
         while self.running:
             should_step = False
+            should_render_camera = False
             with self.lock:
                 should_step = self._process_keyboard()
                 if self.pending_reset:
@@ -946,10 +1239,22 @@ class BottleViewer:
                     should_step = True
                 elif self.play_widget.value and not should_step:
                     should_step = True
+                camera_period = 1.0 / float(self.tracked_fps_widget.value)
+                if (
+                    not should_step
+                    and self.pending_camera_render
+                    and self.display_mode_widget.value == TRACKED_GAUSSIAN_MODE
+                    and time.monotonic() - self.last_camera_render >= camera_period
+                ):
+                    self.pending_camera_render = False
+                    should_render_camera = True
             if should_step:
                 with self.lock:
                     self.predict_once()
                 time.sleep(max(0.0, 1.0 / float(self.hz_widget.value)))
+            elif should_render_camera:
+                with self.lock:
+                    self._update_tracked_exact_render()
             else:
                 time.sleep(0.05)
 
@@ -973,6 +1278,9 @@ def parse_args(argv=None):
     parser.add_argument("--frame", type=int, default=0)
     parser.add_argument("--max-foreground-points", type=int, default=120_000)
     parser.add_argument("--max-background-points", type=int, default=120_000)
+    parser.add_argument("--max-gaussian-splats", type=int, default=60_000)
+    parser.add_argument("--max-background-splats", type=int, default=30_000)
+    parser.add_argument("--tracked-render-width", type=int, default=640)
     parser.add_argument("--cam-downscale", type=int, default=2)
     parser.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--smoke-test", action="store_true")

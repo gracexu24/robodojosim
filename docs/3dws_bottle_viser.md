@@ -15,10 +15,11 @@ ssh -N -L 8097:127.0.0.1:8097 -L 8098:127.0.0.1:8098 gracexu@128.59.17.246
 
 Then open <http://127.0.0.1:8097/>.
 
-The server is bound to remote loopback for privacy. Its PID and log are under:
+The server is bound to remote loopback for privacy. Its PID and log are under
+the most recent timestamped directory in:
 
 ```text
-/data/gracexu/robodojo-work/3dws-bottles/viewer/viser-keyboard-render-toggle-20261024/
+/data/gracexu/robodojo-work/3dws-bottles/viewer/
 ```
 
 ## Controls
@@ -35,11 +36,25 @@ The server is bound to remote loopback for privacy. Its PID and log are under:
 - `Recorded validation actions` replays the held-out episode's real action
   sequence through the world model. `Play recorded held-out sequence` starts it
   directly and `Pause` stops it.
-- `Reset from held-out history` loads eight real latent history frames and
-  restores the action target.
+- `Reset before teleop` stops playback, switches to keyboard control, reloads
+  eight real held-out history frames, and restores the matching action target.
+  Use it whenever switching from a recorded rollout to manual commands so the
+  latent history and command history begin from the same state.
+- Magenta and cyan 3D markers show the left and right absolute Cartesian
+  targets. The `workspace limits` field reports when a key is pushing a target
+  against the held-out training-data envelope.
 - `Frame predicted world` restores the useful camera view.
-- The Rendering section can switch the main viewport between the interactive
-  3D point representation and the model's exact fixed-camera Gaussian render.
+- The Rendering section provides four modes:
+  - `Point cloud (interactive 3D)` is the lightest interactive view.
+  - `Native 3D Gaussian splats` exposes Viser's orbitable, zoomable splat
+    renderer. It uses the model's Gaussian positions, covariances, RGB colors,
+    and opacity, but not its view-dependent spherical-harmonic color term.
+  - `Exact Gaussian render (fixed camera)` is the pixel-accurate gsplat output
+    from one recorded camera.
+  - `Exact Gaussian render (track orbit camera)` rerenders with the interactive
+    Viser camera as it moves. It retains the exact model renderer, but updates
+    at the selected tracked-render FPS rather than every browser animation
+    frame.
 
 Action targets are clamped to the held-out data envelope by default. The action
 order is:
@@ -64,7 +79,9 @@ caches under `/data/gracexu/cache/3dws`.
 ## Validation
 
 The utility tests cover action/pose conversion, action clamping, point
-subsampling, and bounds geometry. The full GPU smoke test loads
+subsampling, bounds geometry, workspace warnings, Gaussian covariance, and
+Viser-camera conversion. The full GPU smoke test loads
 `checkpoints/best.pth` (epoch 738), seeds held-out episode 106, predicts one
-future latent, decodes it, and checks a finite 320x240 Gaussian render. The live
-browser test confirmed a one-step prediction and visible 3D scene.
+future latent, decodes it, publishes native splats, and checks a finite 320x240
+exact Gaussian render. The live browser test confirms reset-before-teleop,
+workspace warnings, camera-tracked exact rendering, and an orbitable splat scene.
