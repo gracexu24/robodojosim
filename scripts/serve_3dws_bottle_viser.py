@@ -12,6 +12,7 @@ import argparse
 import glob
 import json
 import re
+import shutil
 import sys
 import threading
 import time
@@ -39,6 +40,169 @@ ACTION_NAMES = (
     "right_yaw",
     "right_gripper",
 )
+
+KEYBOARD_DELTAS = {
+    "KeyA": (0, -1.0),
+    "KeyD": (0, 1.0),
+    "KeyQ": (1, 1.0),
+    "KeyE": (1, -1.0),
+    "KeyW": (2, 1.0),
+    "KeyS": (2, -1.0),
+    "KeyJ": (7, -1.0),
+    "KeyL": (7, 1.0),
+    "KeyU": (8, 1.0),
+    "KeyO": (8, -1.0),
+    "KeyI": (9, 1.0),
+    "KeyK": (9, -1.0),
+}
+
+POINT_CLOUD_MODE = "Point cloud (interactive 3D)"
+GAUSSIAN_MODE = "Exact Gaussian render (fixed camera)"
+
+
+def apply_keyboard_action(
+    action: np.ndarray,
+    keys: set[str],
+    step: float,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    clamp: bool = True,
+) -> np.ndarray:
+    """Apply simultaneous held-key Cartesian deltas to a 14D action."""
+    out = np.asarray(action, dtype=np.float64).copy()
+    for key in keys:
+        update = KEYBOARD_DELTAS.get(key)
+        if update is not None:
+            index, direction = update
+            out[index] += float(step) * direction
+    return clamp_action(out, lower, upper) if clamp else out
+
+
+KEYBOARD_CLIENT_SCRIPT = r"""
+<script id="three-dws-keyboard-client">
+(() => {
+  const controlled = new Set([
+    "KeyA", "KeyD", "KeyQ", "KeyE", "KeyW", "KeyS",
+    "KeyJ", "KeyL", "KeyU", "KeyO", "KeyI", "KeyK",
+    "KeyG", "KeyH", "KeyR", "Space", "Period"
+  ]);
+  const movement = new Set([
+    "KeyA", "KeyD", "KeyQ", "KeyE", "KeyW", "KeyS",
+    "KeyJ", "KeyL", "KeyU", "KeyO", "KeyI", "KeyK"
+  ]);
+  const held = new Set();
+  let socket = null;
+  let reconnectTimer = null;
+  const send = (payload) => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload));
+    }
+  };
+  const sendHeld = () => send({type: "held", keys: Array.from(held)});
+  const connect = () => {
+    socket = new WebSocket(`ws://${location.hostname}:__KEYBOARD_PORT__`);
+    socket.onopen = sendHeld;
+    socket.onclose = () => {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 1000);
+    };
+  };
+  const isForm = (target) => target && (
+    target.tagName === "INPUT" || target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" || target.isContentEditable
+  );
+  document.addEventListener("keydown", (event) => {
+    if (!controlled.has(event.code) || isForm(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (movement.has(event.code)) {
+      if (!held.has(event.code)) {
+        held.add(event.code);
+        send({type: "tap", key: event.code});
+        sendHeld();
+      }
+    } else if (!event.repeat) {
+      send({type: "tap", key: event.code});
+    }
+  }, true);
+  document.addEventListener("keyup", (event) => {
+    if (!controlled.has(event.code) || isForm(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (held.delete(event.code)) sendHeld();
+  }, true);
+  window.addEventListener("blur", () => {
+    held.clear();
+    sendHeld();
+  });
+  connect();
+})();
+</script>
+"""
+
+
+def install_keyboard_client(viser_module, build_dir: Path, keyboard_port: int) -> None:
+    """Serve a viewer-specific Viser client with a small keyboard bridge."""
+    source_root = Path(viser_module.__file__).resolve().parent / "client" / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    for source in source_root.iterdir():
+        target = build_dir / source.name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        elif source.name != "index.html":
+            shutil.copy2(source, target)
+    html = (source_root / "index.html").read_text()
+    script = KEYBOARD_CLIENT_SCRIPT.replace("__KEYBOARD_PORT__", str(keyboard_port))
+    if "</body>" not in html:
+        raise RuntimeError("Viser client index is missing </body>")
+    (build_dir / "index.html").write_text(html.replace("</body>", script + "\n</body>"))
+    # ViserServer resolves its HTTP root from viser._viser.__file__ at runtime.
+    fake_module_root = build_dir.parent.parent
+    import viser._viser as viser_server_module
+
+    viser_server_module.__file__ = str(fake_module_root / "_viser.py")
+
+
+class KeyboardBridge:
+    """Receive key state from the browser on a dedicated loopback websocket."""
+
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self.lock = threading.Lock()
+        self.held: set[str] = set()
+        self.taps: list[str] = []
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        from websockets.sync.server import serve
+
+        def handler(websocket) -> None:
+            try:
+                for raw in websocket:
+                    message = json.loads(raw)
+                    with self.lock:
+                        if message.get("type") == "held":
+                            self.held = {
+                                key for key in message.get("keys", []) if key in KEYBOARD_DELTAS
+                            }
+                        elif message.get("type") == "tap":
+                            self.taps.append(str(message.get("key", "")))
+            finally:
+                with self.lock:
+                    self.held.clear()
+
+        with serve(handler, self.host, self.port) as server:
+            print(f"[keyboard] websocket ws://{self.host}:{self.port}", flush=True)
+            server.serve_forever()
+
+    def snapshot(self) -> tuple[set[str], list[str]]:
+        with self.lock:
+            held = set(self.held)
+            taps = list(self.taps)
+            self.taps.clear()
+        return held, taps
 
 
 def action_to_poses(action: np.ndarray) -> list[tuple[np.ndarray, np.ndarray, float]]:
@@ -338,10 +502,13 @@ class BottleViewer:
         self.pending_reset = True
         self.running = True
         self.last_step_seconds = 0.0
+        self.last_keyboard_step = time.monotonic()
         self.world = FrozenWorldModel(
             args.threedws_root, args.dynamics_checkpoint, "cuda", args.bf16
         )
         self.episodes = LatentEpisodes(args.latent_dir, args.packed_dirs, "cuda")
+        install_keyboard_client(viser, args.client_build_dir, args.keyboard_port)
+        self.keyboard = KeyboardBridge(args.host, args.keyboard_port)
         self.server = viser.ViserServer(host=args.host, port=args.port, label="3DWS bottle world model")
         self._build_gui()
         self._build_scene()
@@ -353,7 +520,12 @@ class BottleViewer:
         gui.add_markdown(
             "## Two-bottle 3DWS teleop\n"
             "**Latent imagination only.** This predicts future 3D scenes; it does not command Isaac Sim or a robot. "
-            "Drag the left/right 3D gizmos, then step or play."
+            "Click the 3D canvas, then use the keyboard controls below."
+        )
+        gui.add_markdown(
+            "**Left arm:** `A/D` x−/x+, `Q/E` y+/y−, `W/S` z+/z−, `G` gripper  \n"
+            "**Right arm:** `J/L` x−/x+, `U/O` y+/y−, `I/K` z+/z−, `H` gripper  \n"
+            "`R` reset · `Space` play/pause recorded sequence · `.` one prediction"
         )
         with gui.add_folder("Seed / rollout", expand_by_default=True):
             initial_episode = str(
@@ -372,20 +544,29 @@ class BottleViewer:
             self.reset_button = gui.add_button("Reset from held-out history", color="red")
             self.action_source = gui.add_dropdown(
                 "action source",
-                options=("Gizmos", "Recorded validation actions"),
-                initial_value="Gizmos",
+                options=("Keyboard teleoperation", "Recorded validation actions"),
+                initial_value="Keyboard teleoperation",
             )
             self.clamp_widget = gui.add_checkbox("Clamp to held-out action range", True)
             self.step_button = gui.add_button("Predict one future", color="blue")
+            self.play_recorded_button = gui.add_button(
+                "Play recorded held-out sequence", color="green"
+            )
+            self.pause_button = gui.add_button("Pause", color="gray")
             self.play_widget = gui.add_checkbox("Autoplay predictions", False)
             self.hz_widget = gui.add_slider("autoplay Hz", 1.0, 10.0, 1.0, 5.0)
         with gui.add_folder("Action target", expand_by_default=True):
-            self.gripper_widgets = [
-                gui.add_slider("left gripper", 0.0, 1.0, 0.01, 0.0),
-                gui.add_slider("right gripper", 0.0, 1.0, 0.01, 0.0),
-            ]
+            self.step_size_widget = gui.add_slider(
+                "keyboard Cartesian step (m)", 0.001, 0.02, 0.001, 0.005
+            )
+            self.keyboard_state = gui.add_text("held keys", "none", disabled=True)
             self.action_text = gui.add_text("14D target", "", disabled=True)
         with gui.add_folder("Rendering", expand_by_default=False):
+            self.display_mode_widget = gui.add_dropdown(
+                "display mode",
+                options=(POINT_CLOUD_MODE, GAUSSIAN_MODE),
+                initial_value=POINT_CLOUD_MODE,
+            )
             self.reset_camera_button = gui.add_button("Frame predicted world")
             self.show_bg_widget = gui.add_checkbox("Show background points", True)
             self.point_size_widget = gui.add_slider(
@@ -412,18 +593,25 @@ class BottleViewer:
             with self.lock:
                 self.pending_steps += 1
 
-        for arm, widget in enumerate(self.gripper_widgets):
-            @widget.on_update
-            def _(_event, arm=arm):
-                if self.syncing_controls:
-                    return
-                with self.lock:
-                    self.desired_action[7 * arm + 6] = float(self.gripper_widgets[arm].value)
-                    self._update_action_text()
+        @self.play_recorded_button.on_click
+        def _(_event):
+            with self.lock:
+                self.action_source.value = "Recorded validation actions"
+                self.play_widget.value = True
+
+        @self.pause_button.on_click
+        def _(_event):
+            with self.lock:
+                self.play_widget.value = False
+
+        @self.display_mode_widget.on_update
+        def _(_event):
+            with self.lock:
+                self._apply_display_mode()
 
         @self.show_bg_widget.on_update
         def _(_event):
-            self.background_handle.visible = bool(self.show_bg_widget.value)
+            self._apply_display_mode()
 
         @self.point_size_widget.on_update
         def _(_event):
@@ -445,7 +633,7 @@ class BottleViewer:
                 self._set_client_camera(client)
 
     def _build_scene(self) -> None:
-        self.server.scene.add_grid(
+        self.grid_handle = self.server.scene.add_grid(
             "/table_grid",
             width=1.0,
             height=1.0,
@@ -454,7 +642,7 @@ class BottleViewer:
             plane="xy",
             position=(0.0, 0.0, float(self.episodes.bbox[4])),
         )
-        self.server.scene.add_line_segments(
+        self.bounds_handle = self.server.scene.add_line_segments(
             "/training_bounds",
             points=bbox_segments(self.episodes.bbox),
             colors=np.array((30, 200, 240), dtype=np.uint8),
@@ -482,32 +670,14 @@ class BottleViewer:
             indices = evenly_sample(len(xyz), self.args.max_background_points)
             self.background_handle.points = xyz[indices]
             self.background_handle.colors = rgb[indices]
-        self.gizmos = []
+        self.action_frames = []
         for arm, label in enumerate(("left", "right")):
-            handle = self.server.scene.add_transform_controls(
+            handle = self.server.scene.add_frame(
                 f"/action_targets/{label}",
-                scale=0.08,
-                line_width=3.0,
-                translation_limits=tuple(
-                    (float(self.episodes.action_min[7 * arm + axis]), float(self.episodes.action_max[7 * arm + axis]))
-                    for axis in range(3)
-                ),
+                axes_length=0.07,
+                axes_radius=0.0025,
             )
-            self.gizmos.append(handle)
-
-            @handle.on_update
-            def _(_event, arm=arm):
-                if self.syncing_controls:
-                    return
-                with self.lock:
-                    self.desired_action = update_action_pose(
-                        self.desired_action,
-                        arm,
-                        self.gizmos[arm].position,
-                        self.gizmos[arm].wxyz,
-                        float(self.gripper_widgets[arm].value),
-                    )
-                    self._update_action_text()
+            self.action_frames.append(handle)
 
         self.scene_center = np.array(
             [
@@ -529,13 +699,12 @@ class BottleViewer:
             client.camera.look_at = self.scene_center
             client.camera.up_direction = np.array([0.0, 0.0, 1.0])
 
-    def _sync_gizmos(self, action: np.ndarray) -> None:
+    def _sync_action_frames(self, action: np.ndarray) -> None:
         self.syncing_controls = True
         try:
             for arm, (position, wxyz, gripper) in enumerate(action_to_poses(action)):
-                self.gizmos[arm].position = position
-                self.gizmos[arm].wxyz = wxyz
-                self.gripper_widgets[arm].value = float(np.clip(gripper, 0.0, 1.0))
+                self.action_frames[arm].position = position
+                self.action_frames[arm].wxyz = wxyz
         finally:
             self.syncing_controls = False
         self._update_action_text()
@@ -603,7 +772,7 @@ class BottleViewer:
         self.predicted_steps = 0
         self.desired_action = action[stop].copy()
         self.cameras = self._fixed_cameras()
-        self._sync_gizmos(self.desired_action)
+        self._sync_action_frames(self.desired_action)
         self._update_scene(self.latent_history[0, -1], label="held-out seed")
 
     def _next_action(self) -> np.ndarray | None:
@@ -614,7 +783,7 @@ class BottleViewer:
                 return None
             action = self.recorded_action[frame].copy()
             self.desired_action = action.copy()
-            self._sync_gizmos(action)
+            self._sync_action_frames(action)
         else:
             action = self.desired_action.copy()
         if self.clamp_widget.value:
@@ -648,8 +817,9 @@ class BottleViewer:
         indices = evenly_sample(len(xyz), self.args.max_foreground_points)
         self.foreground_handle.points = xyz[indices]
         self.foreground_handle.colors = rgb[indices]
-        self.foreground_handle.visible = True
+        self.foreground_handle.visible = self.display_mode_widget.value == POINT_CLOUD_MODE
         self._update_exact_render(gaussians)
+        self._apply_display_mode()
         total_seconds = time.perf_counter() - start_time
         dataset_frame = self.seed_frame + self.world.n_history - 1 + self.predicted_steps
         self.status_widget.value = (
@@ -663,7 +833,86 @@ class BottleViewer:
         index = min(int(self.camera_widget.value[3:]), len(self.cameras) - 1)
         camera = self.cameras[index]
         image = self.world.render(gaussians, camera, camera["W"], camera["H"])
+        self.last_exact_image = image
         self.render_image.image = image
+        if self.display_mode_widget.value == GAUSSIAN_MODE:
+            self.server.scene.set_background_image(image, format="jpeg", jpeg_quality=90)
+
+    def _apply_display_mode(self) -> None:
+        """Switch the main viewport between 3D points and the exact camera render."""
+        exact = self.display_mode_widget.value == GAUSSIAN_MODE
+        self.foreground_handle.visible = not exact and getattr(self, "last_gaussians", None) is not None
+        self.background_handle.visible = not exact and bool(self.show_bg_widget.value)
+        self.grid_handle.visible = not exact
+        self.bounds_handle.visible = not exact
+        for handle in self.action_frames:
+            handle.visible = not exact
+        if exact and getattr(self, "last_exact_image", None) is not None:
+            self.server.scene.set_background_image(
+                self.last_exact_image, format="jpeg", jpeg_quality=90
+            )
+        elif not exact:
+            self.server.scene.set_background_image(None)
+
+    def _apply_keyboard_tap(self, key: str) -> bool:
+        """Apply one browser key event; return whether a prediction is requested."""
+        if key in KEYBOARD_DELTAS:
+            self.play_widget.value = False
+            self.action_source.value = "Keyboard teleoperation"
+            self.desired_action = apply_keyboard_action(
+                self.desired_action,
+                {key},
+                float(self.step_size_widget.value),
+                self.episodes.action_min,
+                self.episodes.action_max,
+                bool(self.clamp_widget.value),
+            )
+            self._sync_action_frames(self.desired_action)
+            self.last_keyboard_step = time.monotonic()
+            return True
+        if key == "KeyG":
+            self.desired_action[6] = 0.0 if self.desired_action[6] > 0.5 else 1.0
+            self.action_source.value = "Keyboard teleoperation"
+            self._sync_action_frames(self.desired_action)
+            return True
+        if key == "KeyH":
+            self.desired_action[13] = 0.0 if self.desired_action[13] > 0.5 else 1.0
+            self.action_source.value = "Keyboard teleoperation"
+            self._sync_action_frames(self.desired_action)
+            return True
+        if key == "KeyR":
+            self.play_widget.value = False
+            self.pending_reset = True
+            return False
+        if key == "Space":
+            if not self.play_widget.value:
+                self.action_source.value = "Recorded validation actions"
+            self.play_widget.value = not self.play_widget.value
+            return False
+        return key == "Period"
+
+    def _process_keyboard(self) -> bool:
+        held, taps = self.keyboard.snapshot()
+        self.keyboard_state.value = ", ".join(sorted(key[3:] for key in held)) or "none"
+        should_step = False
+        for key in taps:
+            should_step = self._apply_keyboard_tap(key) or should_step
+        now = time.monotonic()
+        if held and now - self.last_keyboard_step >= 1.0 / float(self.hz_widget.value):
+            self.play_widget.value = False
+            self.action_source.value = "Keyboard teleoperation"
+            self.desired_action = apply_keyboard_action(
+                self.desired_action,
+                held,
+                float(self.step_size_widget.value),
+                self.episodes.action_min,
+                self.episodes.action_max,
+                bool(self.clamp_widget.value),
+            )
+            self._sync_action_frames(self.desired_action)
+            self.last_keyboard_step = now
+            should_step = True
+        return should_step
 
     def smoke_test(self) -> dict:
         self.predict_once()
@@ -688,13 +937,14 @@ class BottleViewer:
         while self.running:
             should_step = False
             with self.lock:
+                should_step = self._process_keyboard()
                 if self.pending_reset:
                     self.pending_reset = False
                     self.reset()
                 if self.pending_steps > 0:
                     self.pending_steps -= 1
                     should_step = True
-                elif self.play_widget.value:
+                elif self.play_widget.value and not should_step:
                     should_step = True
             if should_step:
                 with self.lock:
@@ -713,6 +963,12 @@ def parse_args(argv=None):
     parser.add_argument("--packed-dirs", type=Path, nargs="+", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8097)
+    parser.add_argument("--keyboard-port", type=int, default=8098)
+    parser.add_argument(
+        "--client-build-dir",
+        type=Path,
+        default=Path("/data/gracexu/cache/3dws/viser-bottle-client/client/build"),
+    )
     parser.add_argument("--episode", type=int, default=106)
     parser.add_argument("--frame", type=int, default=0)
     parser.add_argument("--max-foreground-points", type=int, default=120_000)

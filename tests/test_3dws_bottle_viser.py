@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from scripts.serve_3dws_bottle_viser import (
+    apply_keyboard_action,
     action_to_poses,
     bbox_segments,
     clamp_action,
@@ -44,6 +45,27 @@ class ViewerUtilityTests(unittest.TestCase):
         segments = bbox_segments(np.array([0, 1, 2, 3, 4, 5]))
         self.assertEqual(segments.shape, (12, 2, 3))
         self.assertEqual(set(np.unique(segments[:, :, 0])), {0.0, 1.0})
+
+    def test_keyboard_moves_both_arms_and_clamps(self):
+        action = np.zeros(14)
+        lower = np.full(14, -0.01)
+        upper = np.full(14, 0.01)
+        moved = apply_keyboard_action(
+            action, {"KeyD", "KeyQ", "KeyI", "KeyL"}, 0.02, lower, upper
+        )
+        self.assertEqual(moved[0], 0.01)
+        self.assertEqual(moved[1], 0.01)
+        self.assertEqual(moved[7], 0.01)
+        self.assertEqual(moved[9], 0.01)
+        self.assertTrue(np.all(moved[[2, 3, 4, 5, 6, 8, 10, 11, 12, 13]] == 0.0))
+
+    def test_opposed_keyboard_keys_cancel(self):
+        action = np.zeros(14)
+        moved = apply_keyboard_action(
+            action, {"KeyA", "KeyD", "KeyU", "KeyO"}, 0.005,
+            np.full(14, -1.0), np.full(14, 1.0)
+        )
+        self.assertTrue(np.allclose(moved, action))
 
 
 if __name__ == "__main__":

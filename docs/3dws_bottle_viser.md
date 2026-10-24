@@ -10,7 +10,7 @@ not send commands to Isaac Sim, ROS, or physical robot hardware.
 On the Mac, keep this tunnel open:
 
 ```bash
-ssh -N -L 8097:127.0.0.1:8097 gracexu@128.59.17.246
+ssh -N -L 8097:127.0.0.1:8097 -L 8098:127.0.0.1:8098 gracexu@128.59.17.246
 ```
 
 Then open <http://127.0.0.1:8097/>.
@@ -18,23 +18,28 @@ Then open <http://127.0.0.1:8097/>.
 The server is bound to remote loopback for privacy. Its PID and log are under:
 
 ```text
-/data/gracexu/robodojo-work/3dws-bottles/viewer/viser-best-20261024/
+/data/gracexu/robodojo-work/3dws-bottles/viewer/viser-keyboard-render-toggle-20261024/
 ```
 
 ## Controls
 
-- Drag the `left` and `right` 6-DoF gizmos in the 3D scene to set the absolute
-  Cartesian target poses.
-- Set the two gripper targets in the sidebar.
+- Click the 3D canvas, then hold `A/D`, `Q/E`, `W/S` to move the left target
+  in x, y, z. Hold `J/L`, `U/O`, `I/K` for the right target.
+- Press `G` or `H` to toggle the left or right gripper. Rotation stays at the
+  seed/recorded target while keyboard teleoperation changes Cartesian position.
+- `R` resets, `Space` plays/pauses the recorded sequence, and `.` predicts one
+  future step. A short key press always produces one step; holding repeats at
+  the selected Hz.
 - `Predict one future` advances the frozen dynamics model one 10 Hz step.
 - `Autoplay predictions` repeatedly advances with the current target.
 - `Recorded validation actions` replays the held-out episode's real action
-  sequence through the world model instead of using the gizmos.
+  sequence through the world model. `Play recorded held-out sequence` starts it
+  directly and `Pause` stops it.
 - `Reset from held-out history` loads eight real latent history frames and
   restores the action target.
 - `Frame predicted world` restores the useful camera view.
-- The Rendering section includes the model's exact Gaussian camera render in
-  addition to the interactive Viser point representation.
+- The Rendering section can switch the main viewport between the interactive
+  3D point representation and the model's exact fixed-camera Gaussian render.
 
 Action targets are clamped to the held-out data envelope by default. The action
 order is:
