@@ -193,6 +193,10 @@ def start_policy_worker(args, output_dir: Path):
         "--socket",
         str(socket_path),
     ]
+    if args.policy_extra_site_packages is not None:
+        command.extend(
+            ["--extra-site-packages", str(args.policy_extra_site_packages)]
+        )
     process = subprocess.Popen(
         command,
         cwd=args.repo_root,
@@ -287,6 +291,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--packed-dir", type=Path, action="append", dest="packed_dirs", required=True)
     result.add_argument("--policy-checkpoint", type=Path, required=True)
     result.add_argument("--policy-python", type=Path, required=True)
+    result.add_argument("--policy-extra-site-packages", type=Path)
     result.add_argument("--output-dir", type=Path, required=True)
     result.add_argument("--cache-root", type=Path, default=Path("/data/gracexu/cache/3dws"))
     result.add_argument("--policy-gpu", type=int, default=1)
@@ -314,6 +319,8 @@ def main(argv=None) -> int:
     args.packed_dirs = [path.resolve() for path in args.packed_dirs]
     args.policy_checkpoint = args.policy_checkpoint.resolve()
     args.policy_python = args.policy_python.resolve()
+    if args.policy_extra_site_packages is not None:
+        args.policy_extra_site_packages = args.policy_extra_site_packages.resolve()
     args.cache_root = args.cache_root.resolve()
     output_dir = prepare_output(args.output_dir.resolve())
     started = time.time()

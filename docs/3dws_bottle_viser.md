@@ -114,3 +114,7 @@ state; the head camera is fixed and each wrist camera follows the rigid
 end-effector-to-camera transform measured at the held-out seed.  Runs default
 to 16 predicted steps because that is the dynamics model's trained
 autoregressive horizon.
+
+The policy worker uses the CUDA-enabled `RoboDojo` Python and appends the
+LeRobot 0.4.4 environment's site-packages after it.  This preserves the CUDA
+PyTorch build while reusing the saved checkpoint processors and policy code.

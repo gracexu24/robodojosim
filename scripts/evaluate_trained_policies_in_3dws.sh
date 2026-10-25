@@ -6,7 +6,8 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 THREEDWS_PYTHON=${THREEDWS_PYTHON:-/data/gracexu/conda-envs/3dws/bin/python}
-POLICY_PYTHON=${POLICY_PYTHON:-/home/gracexu/miniforge3/envs/RoboDojoLeRobotTrain/bin/python}
+POLICY_PYTHON=${POLICY_PYTHON:-/home/gracexu/miniforge3/envs/RoboDojo/bin/python}
+POLICY_EXTRA_SITE_PACKAGES=${POLICY_EXTRA_SITE_PACKAGES:-/home/gracexu/miniforge3/envs/RoboDojoLeRobot/lib/python3.11/site-packages}
 THREEDWS_ROOT=${THREEDWS_ROOT:-/data/gracexu/robodojo-work/3dws}
 DYNAMICS_CHECKPOINT=${DYNAMICS_CHECKPOINT:-/data/gracexu/robodojo-work/3dws-bottles/models/dynamics-two-hours/checkpoints/best.pth}
 LATENT_DIR=${LATENT_DIR:-/data/gracexu/robodojo-work/3dws-bottles/latents/staged-two-hours/val}
@@ -45,6 +46,7 @@ for entry in "act:$ACT_CHECKPOINT" "diffusion:$DIFFUSION_CHECKPOINT"; do
     --packed-dir "$PACKED_DIR" \
     --policy-checkpoint "$checkpoint" \
     --policy-python "$POLICY_PYTHON" \
+    --policy-extra-site-packages "$POLICY_EXTRA_SITE_PACKAGES" \
     --policy-gpu "$POLICY_GPU" \
     --episodes "$EPISODES" \
     --steps "$STEPS" \

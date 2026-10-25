@@ -84,11 +84,18 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--checkpoint", type=Path, required=True)
     result.add_argument("--socket", type=Path, required=True)
     result.add_argument("--device", default="cuda")
+    result.add_argument(
+        "--extra-site-packages",
+        type=Path,
+        help="append a LeRobot environment's site-packages after the GPU environment",
+    )
     return result
 
 
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
+    if args.extra_site_packages is not None:
+        sys.path.append(str(args.extra_site_packages.resolve()))
     runtime = LeRobotPolicyRuntime(args.checkpoint, device=args.device)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(args.socket))
