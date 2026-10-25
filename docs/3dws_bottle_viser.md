@@ -92,3 +92,25 @@ Viser-camera conversion. The full GPU smoke test loads
 future latent, decodes it, publishes native splats, and checks a finite 320x240
 exact Gaussian render. The live browser test confirms reset-before-teleop,
 workspace warnings, camera-tracked exact rendering, and an orbitable splat scene.
+
+## Evaluate ACT and Diffusion Policy inside 3DWS
+
+The registered two-bottle ACT and Diffusion Policy checkpoints can be rolled
+out through the frozen world model with:
+
+```bash
+cd /home/gracexu/robodojo-work/robodojosim
+EPISODES=3 STEPS=16 scripts/evaluate_trained_policies_in_3dws.sh
+```
+
+Each policy runs sequentially.  GPU 0 hosts the VAE/dynamics model and GPU 1
+hosts the policy by default.  The evaluator records a three-camera MP4,
+representative PNGs, per-step timings/actions, worker logs, checkpoint hashes,
+and an evaluation manifest for every held-out seed.
+
+This is a **closed-loop learned-world-model evaluation**, not an Isaac Sim task
+success test.  The prior clamped Cartesian command is used as the next policy
+state; the head camera is fixed and each wrist camera follows the rigid
+end-effector-to-camera transform measured at the held-out seed.  Runs default
+to 16 predicted steps because that is the dynamics model's trained
+autoregressive horizon.
