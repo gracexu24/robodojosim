@@ -172,7 +172,10 @@ class PolicyClient:
 
 
 def start_policy_worker(args, output_dir: Path):
-    socket_path = output_dir / "policy-worker.sock"
+    socket_path = Path(
+        f"/tmp/robodojosim-policy-{os.getpid()}-{time.time_ns()}.sock"
+    )
+    args.worker_socket = socket_path
     log_handle = (output_dir / "policy-worker.log").open("w")
     environment = os.environ.copy()
     environment.update(
@@ -438,8 +441,8 @@ def main(argv=None) -> int:
                 process.wait(timeout=10)
         if log_handle is not None:
             log_handle.close()
-        socket_path = output_dir / "policy-worker.sock"
-        if socket_path.exists():
+        socket_path = getattr(args, "worker_socket", None)
+        if socket_path is not None and socket_path.exists():
             socket_path.unlink()
 
     fieldnames = list(all_rows[0])
