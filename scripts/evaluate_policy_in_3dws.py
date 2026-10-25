@@ -298,7 +298,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--output-dir", type=Path, required=True)
     result.add_argument("--cache-root", type=Path, default=Path("/data/gracexu/cache/3dws"))
     result.add_argument("--policy-gpu", type=int, default=1)
-    result.add_argument("--episodes", type=int, default=3)
+    result.add_argument("--episodes", type=int, default=10)
     result.add_argument("--steps", type=int, default=16)
     result.add_argument("--seed-frame", type=int, default=0)
     result.add_argument("--fps", type=float, default=10.0)

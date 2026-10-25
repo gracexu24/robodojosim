@@ -100,13 +100,17 @@ out through the frozen world model with:
 
 ```bash
 cd /home/gracexu/robodojo-work/robodojosim
-EPISODES=3 STEPS=16 scripts/evaluate_trained_policies_in_3dws.sh
+scripts/evaluate_trained_policies_in_3dws.sh
 ```
 
 Each policy runs sequentially.  GPU 0 hosts the VAE/dynamics model and GPU 1
 hosts the policy by default.  The evaluator records a three-camera MP4,
 representative PNGs, per-step timings/actions, worker logs, checkpoint hashes,
 and an evaluation manifest for every held-out seed.
+
+The default evaluation uses 10 evenly spaced held-out episodes per policy.
+Override `EPISODES` only when a smaller smoke run or a broader held-out sample
+is intentional.
 
 This is a **closed-loop learned-world-model evaluation**, not an Isaac Sim task
 success test.  The prior clamped Cartesian command is used as the next policy

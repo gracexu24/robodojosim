@@ -15,7 +15,7 @@ PACKED_DIR=${PACKED_DIR:-/data/gracexu/robodojo-work/3dws-bottles/stage-two-hour
 OUTPUT_ROOT=${OUTPUT_ROOT:-/data/gracexu/robodojo-work/3dws-bottles/policy-evaluations/act-dp-$(date +%Y%m%d-%H%M%S)}
 WORLD_GPU=${WORLD_GPU:-0}
 POLICY_GPU=${POLICY_GPU:-1}
-EPISODES=${EPISODES:-3}
+EPISODES=${EPISODES:-10}
 STEPS=${STEPS:-16}
 
 ACT_CHECKPOINT=${ACT_CHECKPOINT:-/home/gracexu/robodojo-work/models/bottle-act-two-color-50/checkpoints/last/pretrained_model}
