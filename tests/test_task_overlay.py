@@ -10,7 +10,13 @@ class _RewardManager:
         self.scored = None
 
     def is_A_on_B_bottom(self, **kwargs):
-        return ("inside", kwargs["label_A"], kwargs["label_B"])
+        return (
+            "inside",
+            kwargs["label_A"],
+            kwargs["label_B"],
+            kwargs["min_z_gap"],
+            kwargs["max_z_gap"],
+        )
 
     def all_robot_back_to_origin(self):
         return ("home",)
@@ -58,8 +64,8 @@ def test_two_bottle_success_requires_released_bottles_but_not_home(monkeypatch):
 
     task.run_reward()
     assert task.reward_manager.checked == [
-        ("inside", "bottle0", "dustbin"),
-        ("inside", "bottle1", "dustbin"),
+        ("inside", "bottle0", "dustbin", 0.0, 0.08),
+        ("inside", "bottle1", "dustbin", 0.0, 0.08),
         ("grippers_open", 0.8),
     ]
 

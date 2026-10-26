@@ -65,9 +65,9 @@ reachability-aware motion. The calibrated simple-task sequence is:
 find -> pregrasp -> grasp -> verify/lift -> retract -> lateral bin entry -> release -> validate -> home
 ```
 
-The two-bottle task grants success only after both bottles are geometrically inside the bin and both grippers are
-at least 80% open, so a bottle still held over the bin cannot count as placed. Returning the arms home remains a
-controller diagnostic rather than part of task success.
+The two-bottle task grants success only after both bottles are geometrically inside and settled within 8 cm of the
+modeled bin bottom, and both grippers are at least 80% open. A bottle still held over the bin or suspended at the
+rim cannot count as placed. Returning the arms home remains a controller diagnostic rather than part of success.
 
 ## Develop and test now (no simulator required)
 

