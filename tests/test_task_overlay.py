@@ -15,6 +15,9 @@ class _RewardManager:
     def all_robot_back_to_origin(self):
         return ("home",)
 
+    def is_all_gripper_open(self, open_threshold=0.6):
+        return ("grippers_open", open_threshold)
+
     def check(self, checks):
         self.checked = checks
 
@@ -48,7 +51,7 @@ def _overlay_module(monkeypatch):
     return module
 
 
-def test_two_bottle_success_does_not_require_home_or_open_grippers(monkeypatch):
+def test_two_bottle_success_requires_released_bottles_but_not_home(monkeypatch):
     module = _overlay_module(monkeypatch)
     task = module.PutBottlesIntoDustbinCommon.__new__(module.PutBottlesIntoDustbinCommon)
     task.reward_manager = _RewardManager()
@@ -57,10 +60,12 @@ def test_two_bottle_success_does_not_require_home_or_open_grippers(monkeypatch):
     assert task.reward_manager.checked == [
         ("inside", "bottle0", "dustbin"),
         ("inside", "bottle1", "dustbin"),
+        ("grippers_open", 0.8),
     ]
 
     task.get_score()
     checks, scores, mode = task.reward_manager.scored
     assert scores == [25, 100]
     assert mode == "transition"
-    assert all("home" not in repr(check) and "gripper" not in repr(check) for check in checks)
+    assert ("grippers_open", 0.8) in checks[-1]
+    assert all("home" not in repr(check) for check in checks)
