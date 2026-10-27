@@ -60,6 +60,9 @@ class ObsManager:
         self.env = env
         if hasattr(env, "robot_manager"):
             self.robot_manager = env.robot_manager
+            if self.collect_tactile:
+                self.robot_manager.configure_tactile(self.obs_config.get("tactile", {}))
+                self.robot_manager.bind_scene_manager(env.scene_manager)
         else:
             self.robot_manager = None
         if hasattr(env, "capture_manager"):

@@ -60,17 +60,34 @@ Four observation streams are emitted:
 
 Each stored frame contains:
 
-- `tactile/<pad>/normal_forces`: `float32 [12, 32]`, newtons
+- `tactile/<pad>/normal_forces`: `float32 [12, 32]`, raw VT-Refine
+  virtual-spring response
 - `tactile/<pad>/positions`: `float32 [12, 32, 3]`, world-space meters
 
-The Isaac integration uses native PhysX contact sensors on the four pad links.
-Because RoboDojo creates task objects after Isaac Lab initializes filtered
-contact buffers, dynamically filtered per-contact taxel assignment is not
-available in this version. The stable implementation records the aggregate pad
-normal force and encodes it in the central `2 x 2` cells of the unchanged
-`12 x 32` grid; positions cover the full taxel map. This is a useful tactile
-contact signal and preserves the target interface, but it is not the full
-VT-Refine SDF/virtual-spring spatial pressure model.
+The implementation now follows the VT-Refine/easysim-envs spatial contact
+model rather than an aggregate PhysX pad force. On each observation it:
+
+1. Reconciles the tactile mesh registry with the active RoboDojo
+   `LayoutManager` records. Newly spawned `Rigid`, `Dynamic`, and `Geometry`
+   objects are triangulated from their USD mesh descendants; stale objects are
+   removed when the layout changes.
+2. Transforms all 384 taxels on each pad into each active object's mesh frame
+   and queries signed distance plus the outward surface normal using Warp's
+   winding-number mesh query.
+3. Converts negative signed distance to penetration depth and applies the
+   VT-Refine virtual spring (`KN=1.0`), tangential velocity spring (`KT=0.1`),
+   and Coulomb cap (`MU=2.0`). Object and taxel point velocities are evaluated
+   at the closest surface point.
+4. Projects the resulting world-space force into the taxel frame and stores
+   its pad-normal component. Contact therefore occupies the actual affected
+   taxels, not a fixed central block.
+
+The values are the raw VT-Refine sensor response, not calibrated real-world
+newtons. The native Isaac contact sensors remain only as reliable pad-pose
+trackers; they do not determine the taxel pressure field. The implementation is
+adapted from `easysim-envs` commit
+`5512c3389685b217fae046a32b0b95f2f3020c39`, with its MIT license copied to
+`integration/robodojo/arx_aloha/EASYSIM_ENVS_LICENSE`.
 
 ## Validation and evaluation
 
@@ -80,15 +97,18 @@ Run the source/schema validator with the Python 3.11 policy environment:
 cd /home/gracexu/robodojo-work/robodojosim-arx-aloha
 PYTHONNOUSERSITE=1 PYTHONPATH=src \
   /home/gracexu/miniforge3/envs/RoboDojoPolicy/bin/python \
-  scripts/validate_arx_aloha_tactile.py
+  scripts/validate_arx_aloha_tactile.py \
+  --episode /data/gracexu/robodojo-work/arx-aloha-tactile/vt-refine-sdf-smoke-attempt3-20261027/episode_000000.hdf5
 ```
 
-The definitive held-out scripted evaluation uses physical GPU 1 (an RTX 4090)
-and writes its tactile episode under:
+The full spatial-backend held-out scripted evaluation uses physical GPU 1 (an
+RTX 4090) and writes its successful 250-step tactile episode under:
 
-`/data/gracexu/robodojo-work/arx-aloha-tactile/settled-final-20261027/data`
+`/data/gracexu/robodojo-work/arx-aloha-tactile/vt-refine-sdf-smoke-attempt3-20261027`
 
 Its videos are under the matching RoboDojo `eval_result` run ID
-`arx-aloha-tactile-settled-final-20261027`. The result counts as success only
-after both bottles have been released and satisfy the calibrated bottom-floor
-predicate.
+`arx-aloha-vt-refine-sdf-smoke-attempt3-20261027`. All four pads recorded
+finite spatial fields outside the old central `2 x 2` placeholder; peak
+simultaneous activation ranged from 15 to 76 taxels. The task result counts as
+success only after both bottles have been released and satisfy the calibrated
+bottom-floor predicate.

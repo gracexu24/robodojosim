@@ -134,6 +134,10 @@ fi
 
 cp "${OVERLAY_SOURCE}/env/robot_manager/robot_manager.py" \
     "${HYBRID}/env/robot_manager/robot_manager.py"
+cp "${OVERLAY_SOURCE}/env/robot_manager/vt_refine_tactile.py" \
+    "${HYBRID}/env/robot_manager/vt_refine_tactile.py"
+cp "${OVERLAY_SOURCE}/EASYSIM_ENVS_LICENSE" \
+    "${HYBRID}/EASYSIM_ENVS_LICENSE"
 cp "${OVERLAY_SOURCE}/env/robot_manager/robot_class/x5_aloha.py" \
     "${HYBRID}/env/robot_manager/robot_class/x5_aloha.py"
 cp "${OVERLAY_SOURCE}/env/robot_manager/robot_config/x5_aloha.py" \

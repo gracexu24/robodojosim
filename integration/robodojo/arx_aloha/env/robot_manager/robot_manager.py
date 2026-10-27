@@ -16,6 +16,7 @@ from env.environment.isaac.isaac_rl_env import IsaacRLEnv
 from env.global_configs import ENV_REGEX_NAMESPACE
 from env.planner_manager.curobo_planner import CuroboPlanner
 from env.robot_manager.control_manager import ControlManager, MetaControl
+from env.robot_manager.vt_refine_tactile import VTRefineTactileBackend
 from utils.ensure_usd_path import ensure_usd_path
 
 
@@ -45,6 +46,14 @@ class RobotManager:
         self.ik_solver = dict()
         self.robot_origin_endpose = None
         self.robot_init_joint = [dict() for _ in range(self.num_envs)]
+        self.scene_manager = None
+        self.tactile_backend = None
+        self.tactile_config = {
+            "normal_stiffness": 1.0,
+            "tangential_stiffness": 0.1,
+            "friction_coefficient": 2.0,
+            "max_query_distance": 0.03,
+        }
         for idx, cfg in enumerate(self.robots_cfg):
             if not cfg.get("coupled", False):
                 robot = self._get_robot(cfg, idx)
@@ -422,6 +431,8 @@ class RobotManager:
 
     def reset(self):
         self.control_manager.reset()
+        if self.tactile_backend is not None:
+            self.tactile_backend.reset()
         if self.robot_key is None or len(self.robot_key) == 0:
             self._setup_robot_key()
         self.robot_origin_endpose = [dict() for _ in range(self.num_envs)]
@@ -520,8 +531,26 @@ class RobotManager:
         self.sim = sim
         self.scene = sim.scene
 
+    def configure_tactile(self, config) -> None:
+        for key in self.tactile_config:
+            if config.get(key) is not None:
+                self.tactile_config[key] = float(config[key])
+
+    def bind_scene_manager(self, scene_manager) -> None:
+        """Attach the post-spawn object registry used for dynamic SDF registration."""
+        self.scene_manager = scene_manager
+        self.tactile_backend = VTRefineTactileBackend(
+            device=self.device,
+            **self.tactile_config,
+        )
+        self.tactile_backend.bind_scene_manager(scene_manager)
+
     def close(self):
         self.control_manager.reset()
+        if self.tactile_backend is not None:
+            self.tactile_backend.reset()
+            self.tactile_backend = None
+        self.scene_manager = None
         self.robot_key.clear()
         self.robot_origin_endpose = [dict() for _ in range(self.num_envs)]
         self.robot_init_joint = [dict() for _ in range(self.num_envs)]
@@ -547,10 +576,9 @@ class RobotManager:
                             update_period=0.0,
                             history_length=0,
                             track_pose=True,
-                            # RoboDojo creates task objects during reset, after
-                            # Isaac Lab has initialized filtered-contact views.
-                            # An unfiltered pad view therefore provides the
-                            # stable signal: the aggregate force on each pad.
+                            # The pose is used to place the VT-Refine taxel
+                            # grid. Spatial contact is computed by the dynamic
+                            # mesh-SDF backend rather than PhysX contact bins.
                             track_contact_points=False,
                             filter_prim_paths_expr=[],
                         ),
@@ -559,18 +587,15 @@ class RobotManager:
         return scene_cfg
 
     def get_tactile(self, env_idx_list=None):
-        """Return VT-Refine-style 12x32 world points and normal-force maps.
-
-        Isaac Lab supplies contact positions and normal force vectors.  Each
-        filtered contact is bilinearly accumulated onto the pad's physical
-        2 mm taxel grid.  The returned position channel follows VT-Refine's
-        world-space convention and remains useful when force is zero.
-        """
+        """Return per-taxel VT-Refine SDF/virtual-spring observations."""
         if env_idx_list is None:
             env_idx_list = list(range(self.num_envs))
         else:
             env_idx_list = list(env_idx_list)
         output = {env_idx: {} for env_idx in env_idx_list}
+        if self.tactile_backend is None:
+            raise RuntimeError("tactile collection is enabled but the VT-Refine backend is not bound")
+        self.tactile_backend.synchronize(env_idx_list)
 
         row_coords = torch.linspace(-0.011, 0.011, 12, device=self.device)
         col_coords = torch.linspace(-0.031, 0.031, 32, device=self.device)
@@ -578,7 +603,7 @@ class RobotManager:
         # The VT-Refine mesh ray hits the -1.5 mm elastomer face.
         local_points = torch.stack((rows, torch.full_like(rows, -0.0015), cols), dim=-1)
 
-        for robot in self.robot_list:
+        for robot_idx, robot in enumerate(self.robot_list):
             sensor_keys = getattr(robot, "tactile_sensor_keys", {})
             if not sensor_keys or robot.type != "target":
                 continue
@@ -586,25 +611,30 @@ class RobotManager:
             for pad_name, sensor_key in sensor_keys.items():
                 sensor = self.scene[sensor_key]
                 data = sensor.data
+                link_name = robot.tactile_sensor_links[pad_name]
+                articulation = self.robot_key[robot_idx]
+                link_idx = articulation.body_names.index(link_name)
                 for env_idx in env_idx_list:
-                    pad_pos = data.pos_w[env_idx, 0]
-                    pad_quat = data.quat_w[env_idx, 0]
+                    pad_pos = data.pos_w[env_idx].reshape(-1, 3)[0]
+                    pad_quat = data.quat_w[env_idx].reshape(-1, 4)[0]
                     flat_local = local_points.reshape(-1, 3)
                     repeated_quat = pad_quat.expand(flat_local.shape[0], -1)
-                    points_w = (
-                        quat_apply(repeated_quat, flat_local) + pad_pos.unsqueeze(0)
-                    ).reshape(12, 32, 3)
-                    force_grid = torch.zeros((12, 32), device=self.device)
+                    offsets_w = quat_apply(repeated_quat, flat_local)
+                    flat_points_w = offsets_w + pad_pos.unsqueeze(0)
+                    points_w = flat_points_w.reshape(12, 32, 3)
 
-                    # Isaac's unfiltered view reports a net pad force but no
-                    # stable contact location for objects spawned after scene
-                    # initialization. Encode it at the pad center rather than
-                    # inventing unsupported spatial detail. This keeps the
-                    # VT-Refine-compatible 12x32 schema and makes the fidelity
-                    # boundary explicit to downstream consumers.
-                    net = torch.linalg.vector_norm(data.net_forces_w[env_idx, 0])
-                    if net > 0:
-                        force_grid[5:7, 15:17] = net / 4.0
+                    link_velocity = articulation.data.body_link_vel_w[env_idx, link_idx]
+                    linear_velocity = link_velocity[:3].unsqueeze(0)
+                    angular_velocity = link_velocity[3:6].unsqueeze(0).expand_as(offsets_w)
+                    point_velocity = linear_velocity + torch.linalg.cross(
+                        angular_velocity, offsets_w, dim=-1
+                    )
+                    force_grid = self.tactile_backend.sample(
+                        env_idx=env_idx,
+                        tactile_points_world=flat_points_w,
+                        tactile_points_orientation_world=repeated_quat,
+                        tactile_points_velocity_world=point_velocity,
+                    ).reshape(12, 32)
 
                     label = f"{arm_prefix}_{pad_name}" if arm_prefix else pad_name
                     output[env_idx][label] = {

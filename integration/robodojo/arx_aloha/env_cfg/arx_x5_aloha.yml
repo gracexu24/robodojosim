@@ -16,6 +16,11 @@ observation:
     rows: 12
     columns: 32
     pitch_m: 0.002
+    # Raw VT-Refine virtual-spring parameters (easysim-envs commit 5512c33).
+    normal_stiffness: 1.0
+    tangential_stiffness: 0.1
+    friction_coefficient: 2.0
+    max_query_distance: 0.03
   vision:
     approximate_depth: false
     depth: true

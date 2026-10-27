@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
+import json
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -78,11 +80,83 @@ def validate_recording() -> None:
             assert handle["tactile/right_right_pad/normal_forces"][0, 5, 16] == 1.25
 
 
+def validate_backend_source(project_root: Path) -> None:
+    """Keep the installed overlay tied to the spatial VT-Refine model."""
+
+    source = (
+        project_root
+        / "integration/robodojo/arx_aloha/env/robot_manager/vt_refine_tactile.py"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "mesh_query_point_sign_winding_number",
+        "depth = (-best_distance).clamp(min=0.0)",
+        "normal_force_norm = self.normal_stiffness * depth",
+        "static_friction = self.tangential_stiffness * tangent_speed",
+        "dynamic_friction = self.friction_coefficient * normal_force_norm",
+        "layout_manager.get_layout_records",
+    ):
+        assert required in source, required
+    assert "force_grid[5:7, 15:17]" not in source
+
+
+def validate_spatial_episode(path: Path) -> dict[str, dict[str, int | float | bool]]:
+    """Validate a real episode and summarize its spatial taxel activation."""
+
+    expected_pads = {
+        "left_left_pad",
+        "left_right_pad",
+        "right_left_pad",
+        "right_right_pad",
+    }
+    summary = {}
+    with h5py.File(path, "r") as handle:
+        assert set(handle["tactile"]) == expected_pads
+        for pad in sorted(expected_pads):
+            force = handle[f"tactile/{pad}/normal_forces"][:]
+            positions = handle[f"tactile/{pad}/positions"][:]
+            assert force.ndim == 3 and force.shape[1:] == (12, 32)
+            assert positions.shape == force.shape + (3,)
+            assert np.isfinite(force).all() and np.isfinite(positions).all()
+            active = force > 1.0e-8
+            active_by_frame = active.reshape(force.shape[0], -1).sum(axis=1)
+            active_coords = np.argwhere(active)
+            unique_taxels = (
+                np.unique(active_coords[:, 1:3], axis=0).shape[0]
+                if active_coords.size
+                else 0
+            )
+            old_center = np.zeros((12, 32), dtype=bool)
+            old_center[5:7, 15:17] = True
+            outside_old_center = int((active & ~old_center).sum())
+            assert active.any(), f"{pad} never contacts an object"
+            assert unique_taxels > 4, f"{pad} does not contain a spatial pressure field"
+            assert outside_old_center > 0, f"{pad} still looks like the aggregate placeholder"
+            summary[pad] = {
+                "finite": True,
+                "max_response": float(force.max()),
+                "nonzero_frames": int((active_by_frame > 0).sum()),
+                "max_active_taxels": int(active_by_frame.max()),
+                "unique_active_taxels": int(unique_taxels),
+                "outside_old_center_samples": outside_old_center,
+            }
+    return summary
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--episode",
+        type=Path,
+        help="optional real HDF5 episode whose four spatial tactile fields should be validated",
+    )
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     validate_asset(root)
+    validate_backend_source(root)
     validate_recording()
-    print("ARX+ALOHA asset and tactile HDF5 schema validated")
+    print("ARX+ALOHA asset, VT-Refine backend source, and tactile HDF5 schema validated")
+    if args.episode is not None:
+        print(json.dumps(validate_spatial_episode(args.episode), indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
