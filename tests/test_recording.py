@@ -98,3 +98,26 @@ def test_recorder_flush_interval_is_validated(tmp_path):
         assert "flush_interval" in str(exc)
     else:
         raise AssertionError("zero flush interval should fail")
+
+
+def test_recorder_writes_vt_refine_tactile_grids(tmp_path):
+    env = MockBottleEnv()
+    observation = env.observation()
+    positions = np.zeros((12, 32, 3), dtype=np.float32)
+    forces = np.zeros((12, 32), dtype=np.float32)
+    forces[5, 16] = 1.25
+    observation["tactile"] = {
+        "left_left_pad": {"positions": positions, "normal_forces": forces},
+        "left_right_pad": {"positions": positions, "normal_forces": forces},
+        "right_left_pad": {"positions": positions, "normal_forces": forces},
+        "right_right_pad": {"positions": positions, "normal_forces": forces},
+    }
+    recorder = EpisodeRecorder(tmp_path, 13, seed=0, instruction="test")
+    recorder.append(observation, BottleController().next_action(env.snapshot()).action)
+    path = recorder.close(success=False)
+
+    assert validate_episode(path) == []
+    with h5py.File(path, "r") as handle:
+        assert handle["tactile/left_left_pad/positions"].shape == (1, 12, 32, 3)
+        assert handle["tactile/right_right_pad/normal_forces"].shape == (1, 12, 32)
+        assert handle["tactile/right_right_pad/normal_forces"][0, 5, 16] == 1.25

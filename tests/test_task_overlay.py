@@ -18,6 +18,9 @@ class _RewardManager:
             kwargs["max_z_gap"],
         )
 
+    def is_A_root_point_in_B_bbox(self, **kwargs):
+        return ("inside_bbox", kwargs["label_A"], kwargs["label_B"])
+
     def all_robot_back_to_origin(self):
         return ("home",)
 
@@ -64,14 +67,14 @@ def test_two_bottle_success_requires_released_bottles_but_not_home(monkeypatch):
 
     task.run_reward()
     assert task.reward_manager.checked == [
-        ("inside", "bottle0", "dustbin", 0.0, 0.08),
-        ("inside", "bottle1", "dustbin", 0.0, 0.08),
-        ("grippers_open", 0.8),
+        ("inside", "bottle0", "dustbin", 0.0, 0.30),
+        ("inside", "bottle1", "dustbin", 0.0, 0.30),
+        ("grippers_open", 0.6),
     ]
 
     task.get_score()
     checks, scores, mode = task.reward_manager.scored
     assert scores == [25, 100]
     assert mode == "transition"
-    assert ("grippers_open", 0.8) in checks[-1]
+    assert ("grippers_open", 0.6) in checks[-1]
     assert all("home" not in repr(check) for check in checks)

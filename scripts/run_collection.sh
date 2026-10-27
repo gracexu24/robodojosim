@@ -65,5 +65,5 @@ else
 fi
 
 bash "${XPL_ROOT}/policy/bottle_scripted/eval.sh" \
-    RoboDojo put_bottles_into_dustbin scripted arx_x5 ee "${POLICY_SEED}" \
+    RoboDojo put_bottles_into_dustbin scripted "${ROBODOJOSIM_ENV_CFG_TYPE:-arx_x5}" ee "${POLICY_SEED}" \
     "${POLICY_GPU_ID}" "${ENV_GPU_ID}" "${POLICY_ENV}" "${EVAL_ENV}"

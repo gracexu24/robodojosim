@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
+
 from robodojosim.controller import BottleController, ControllerConfig
 from robodojosim.recording import EpisodeRecorder
 from robodojosim.robodojo_adapter import RoboDojoSceneAdapter, teacher_frame
@@ -18,6 +20,74 @@ def _seed(task_env) -> int:
 def _config() -> ControllerConfig:
     path = os.environ.get("ROBODOJOSIM_CONFIG")
     return ControllerConfig.from_json(path) if path else ControllerConfig()
+
+
+def _print_reward_diagnostics(task_env) -> None:
+    """Print each terminal predicate value when a scripted run misses reward."""
+
+    reward_manager = getattr(task_env, "reward_manager", None)
+    if reward_manager is None:
+        return
+    checks = [
+        reward_manager.is_A_on_B_bottom(
+            label_A="bottle0", label_B="dustbin", min_z_gap=0.0, max_z_gap=0.30
+        ),
+        reward_manager.is_A_on_B_bottom(
+            label_A="bottle1", label_B="dustbin", min_z_gap=0.0, max_z_gap=0.30
+        ),
+        reward_manager.is_all_gripper_open(open_threshold=0.6),
+    ]
+    values = []
+    for check in checks:
+        try:
+            values.append(float(reward_manager.call_func_parser(check, env_idx=0)))
+        except Exception as exc:  # pragma: no cover - only exercised in Isaac
+            values.append(f"{type(exc).__name__}: {exc}")
+    print(
+        "[bottle_scripted] terminal predicates "
+        f"bottle0_on_bottom={values[0]} bottle1_on_bottom={values[1]} grippers_open={values[2]}"
+    )
+    parser = reward_manager.func_parser
+    geometry = {}
+    for label in ("bottle0", "bottle1"):
+        geometry[label] = {}
+        for max_z_gap in (0.08, 0.12, 0.20, 0.30):
+            check = reward_manager.is_A_on_B_bottom(
+                label_A=label, label_B="dustbin", min_z_gap=0.0, max_z_gap=max_z_gap
+            )
+            geometry[label][f"bottom_gap_le_{max_z_gap:.2f}"] = float(
+                reward_manager.call_func_parser(check, env_idx=0)
+            )
+        geometry[label]["root_in_bin"] = float(
+            reward_manager.call_func_parser(
+                reward_manager.is_A_root_point_in_B_bbox(label_A=label, label_B="dustbin"),
+                env_idx=0,
+            )
+        )
+        instance = parser.layout_manager.get_instance_name(label=label, env_idx=0)
+        position, _ = parser.layout_manager.get_instance_pose(inst_name=instance, env_idx=0)
+        geometry[label]["position"] = np.asarray(position, dtype=float).reshape(-1)[:3].round(5).tolist()
+    print(f"[bottle_scripted] terminal geometry {geometry}")
+
+    grippers = []
+    for robot in parser.robot_manager.robot_list:
+        if robot.type != "target":
+            continue
+        real = np.asarray(
+            parser.robot_manager.get_end_effector_real_val(robot=robot, env_idx_list=[0])[0],
+            dtype=float,
+        ).reshape(-1)
+        scale = np.asarray(robot.gripper_scale, dtype=float)
+        normalized = (real - scale[0]) / (scale[1] - scale[0])
+        grippers.append(
+            {
+                "arm": robot.arm_name,
+                "real": real.round(6).tolist(),
+                "normalized": normalized.round(4).tolist(),
+                "scale": scale.tolist(),
+            }
+        )
+    print(f"[bottle_scripted] terminal gripper states {grippers}")
 
 
 def eval_one_episode(TASK_ENV, model_client):
@@ -121,6 +191,7 @@ def eval_one_episode(TASK_ENV, model_client):
 
         ended = bool(getattr(TASK_ENV, "end_flag", [False])[0])
         if controller.done and not ended:
+            _print_reward_diagnostics(TASK_ENV)
             # RoboDojo initializes success=True and only flips it at a terminal
             # condition. A finished script without full reward must therefore
             # be marked terminal-failed before run_eval aggregates results.
