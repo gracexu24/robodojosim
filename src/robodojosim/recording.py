@@ -170,6 +170,11 @@ class EpisodeRecorder:
                         )
                     else:
                         self._append_value(f"vision/{camera}/{_PLURAL_KEYS.get(key, key)}", value)
+        tactile = observation.get("tactile", {})
+        if isinstance(tactile, Mapping):
+            # Keep stable per-pad spatial taxels.  The world-model exporter
+            # later stacks these as [T, 4, 384, xyz/signal].
+            self._append_mapping("tactile", tactile, pluralize=False)
         if teacher:
             self._append_mapping("teacher", teacher, pluralize=False)
         self._append_value(

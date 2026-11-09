@@ -50,6 +50,7 @@ class WorldModelExportConfig:
     source_camera_axes: str = "isaac_usd"
     object_mask_margin: float = 0.005
     require_object_masks: bool = True
+    tactile_signal_scale: float = 0.03
 
     def __post_init__(self) -> None:
         xmin, xmax, ymin, ymax, zmin, zmax = self.bbox
@@ -61,6 +62,8 @@ class WorldModelExportConfig:
             raise ValueError("source_extrinsic must be camera_to_world or world_to_camera")
         if self.source_camera_axes not in {"isaac_usd", "opencv"}:
             raise ValueError("source_camera_axes must be isaac_usd or opencv")
+        if self.tactile_signal_scale <= 0:
+            raise ValueError("tactile_signal_scale must be positive")
 
 
 def _camera_names(handle: h5py.File) -> tuple[str, ...]:
@@ -416,6 +419,29 @@ def export_3dws_episode(
         if joint_state is not None:
             packed.create_dataset("robot/joint_pos", data=joint_state)
             packed.create_dataset("robot/full_joint_pos", data=joint_state)
+        pad_names = ("left_left_pad", "left_right_pad", "right_left_pad", "right_right_pad")
+        tactile_xyz = np.zeros((len(indices), 4, 384, 3), dtype=np.float32)
+        tactile_sig = np.zeros((len(indices), 4, 384), dtype=np.float32)
+        has_tactile = True
+        for pad_index, pad_name in enumerate(pad_names):
+            pos_key = f"tactile/{pad_name}/positions"
+            force_key = f"tactile/{pad_name}/normal_forces"
+            if pos_key not in source_file or force_key not in source_file:
+                has_tactile = False
+                continue
+            positions = source_file[pos_key][indices].astype(np.float32).reshape(len(indices), 384, 3)
+            forces = source_file[force_key][indices].astype(np.float32).reshape(len(indices), 384)
+            tactile_xyz[:, pad_index] = positions
+            tactile_sig[:, pad_index] = np.clip(forces / config.tactile_signal_scale, 0.0, 1.0)
+        tactile_group = packed.require_group("tactile")
+        tactile_group.create_dataset("xyz", data=tactile_xyz, compression="gzip", compression_opts=1)
+        tactile_group.create_dataset("sig", data=tactile_sig, compression="gzip", compression_opts=1)
+        tactile_group.attrs.update(
+            has_tac=bool(has_tactile),
+            pad_names=json.dumps(pad_names),
+            signal_scale=float(config.tactile_signal_scale),
+            signal_semantics="clipped VT-Refine normal force divided by signal_scale",
+        )
         packed.create_dataset("meta/stage", data=stage)
         packed.create_dataset("meta/timestamp", data=timestamps.astype(np.float64))
         packed.create_dataset("meta/source_frame_index", data=indices.astype(np.int64))
