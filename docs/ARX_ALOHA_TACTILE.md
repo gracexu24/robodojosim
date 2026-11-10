@@ -28,6 +28,25 @@ links, makes independent copies of XPolicyLab and calibrated layouts, creates a
 separate asset overlay, and converts the hybrid URDF to
 `ARX_ALOHA_calibrated.usd`. Existing artifacts are preserved.
 
+## Fixed-camera tactile variant
+
+A third, independent setup replaces the two wrist cameras with fixed left and
+right workspace cameras while retaining the primary overhead camera and the
+same ARX+ALOHA tactile arms:
+
+```bash
+cd /home/gracexu/robodojo-work/robodojosim-arx-aloha
+scripts/install_arx_aloha_fixed_cameras.sh \
+  /home/gracexu/robodojo-work/RoboDojo \
+  /home/gracexu/robodojo-work/RoboDojo-arx-aloha-fixed-cameras
+```
+
+Launch it with `ROBODOJOSIM_ENV_CFG_TYPE=arx_x5_aloha_fixed_cameras`.
+Its vision keys are `cam_head`, `cam_left_fixed`, and `cam_right_fixed`.
+The fixed-camera asset overlay omits only the wrist-camera declaration from
+`robot_config.yml`; the tactile arm USD, four 12x32 VT-Refine streams, 14D
+Cartesian action contract, and task geometry are unchanged.
+
 ## Mechanical and control changes
 
 - ALOHA/VX300 finger meshes replace the stock ARX finger meshes without

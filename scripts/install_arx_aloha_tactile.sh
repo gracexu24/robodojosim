@@ -66,8 +66,9 @@ if [[ -L "${HYBRID}/XPolicyLab" ]]; then
         exit 2
     fi
 fi
-if [[ ! -d "${HYBRID}/XPolicyLab" ]]; then
-    cp -a "${ORIGINAL}/XPolicyLab" "${HYBRID}/XPolicyLab"
+if [[ ! -f "${HYBRID}/XPolicyLab/utils/setup_env_client.sh" ]]; then
+    mkdir -p "${HYBRID}/XPolicyLab"
+    cp -a "${ORIGINAL}/XPolicyLab/." "${HYBRID}/XPolicyLab/"
 fi
 mkdir -p "${HYBRID}/XPolicyLab/policy/bottle_scripted"
 cp "${PROJECT_ROOT}/integration/xpolicylab/policy/bottle_scripted/deploy.py" \

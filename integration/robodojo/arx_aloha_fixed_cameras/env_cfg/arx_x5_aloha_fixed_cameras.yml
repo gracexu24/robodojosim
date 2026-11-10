@@ -1,0 +1,28 @@
+config_name: arx_x5_aloha_fixed_cameras
+
+config:
+  sim: sim_config
+  scene: default
+  robot: dual_x5_aloha
+  camera: camera_config_fixed
+
+observation:
+  collect_freq: 25
+  robot:
+    joint_states: true
+    world_ee_state: true
+  tactile:
+    enabled: true
+    rows: 12
+    columns: 32
+    pitch_m: 0.002
+    normal_stiffness: 1.0
+    tangential_stiffness: 0.1
+    friction_coefficient: 2.0
+    max_query_distance: 0.03
+  vision:
+    approximate_depth: false
+    depth: true
+    intrinsic_matrix: true
+    extrinsic_matrix: true
+    shape: true
