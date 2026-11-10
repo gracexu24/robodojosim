@@ -10,7 +10,8 @@ packed datasets, checkpoints, and old 3DWS tree are not overwritten.
   contains the copied Isaac Sim task.  `env_cfg/arx_x5_aloha_fixed_cameras.yml`
   selects two X5A arms with ALOHA grippers, four 12x32 VT-Refine pads, and the
   overhead/left-fixed/right-fixed cameras.  Reset writes the exact home joint
-  state to PhysX; joint1=pi points both arms into the workspace.  The tactile
+  state to PhysX; the calibrated USD's joint1=0 home and the existing +90-degree
+  root transforms point both arms forward into the workspace.  The tactile
   backend registers spawned meshes once and snapshots object kinematics once
   per observation, avoiding recursive PhysX access across four pads.
 - `/home/gracexu/robodojo-work/robodojosim` is the integration/recording repo.
@@ -48,8 +49,9 @@ Legacy pre-import wrappers are retained verbatim under
 - Python compilation and shell syntax validation across all three repos.
 - One real staged episode passed packed point-cloud, exact-depth, render,
   projected gripper-mask, and three-resolution robot-label loading.
-- A 700-step fixed-camera Isaac episode ran without the former recursive PhysX
-  mutex abort.  It produced 701-frame videos from all three cameras and a raw
-  280-frame/10 Hz episode containing all four `(12,32)` tactile streams.  The
-  scripted controller did not finish the task, so this is a runtime/connectivity
-  pass and a task-policy failure—not a claimed manipulation success.
+- A fixed-camera Isaac episode completed both pick-and-place operations in 268
+  control actions with `success=True` and `termination_reason=task_success`.
+  Both final grippers were open and both bottles rested inside the bin.  Its
+  107-frame/10 Hz raw episode contains metric depth for all three cameras and
+  all four `(12,32)` tactile streams.  The run also confirmed that the former
+  recursive PhysX mutex abort does not recur.
