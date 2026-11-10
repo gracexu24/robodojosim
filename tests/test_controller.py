@@ -25,10 +25,11 @@ def test_production_profiles_use_physically_calibrated_left_grasp_center():
         assert config.right_grasp_position_offset == [0.0, 0.0, 0.0]
         assert config.grasp_settle_steps == 0
         assert config.grasp_max_center_offset == 0.09
-        assert config.lift_height == 0.22
+        assert config.lift_height == (0.30 if name == "bottle_task.json" else 0.22)
         assert config.drop_clearance == 0.10
         assert config.rim_clearance == 0.03
         assert config.gripper_hold_steps == 7
+        assert config.post_release_settle_steps == (25 if name == "bottle_task.json" else 0)
         assert config.bottle_limit == 2
         assert config.bottle_labels == ["bottle0", "bottle1"]
 
@@ -502,6 +503,36 @@ def test_drop_hold_settles_with_closed_gripper_before_release():
     hold = planned[release_index - 4 : release_index]
     assert [step.phase for step in hold] == [Phase.HOLD] * 4
     assert all(float(step.action["left_ee_joint_state"][0]) == 0.0 for step in hold)
+
+
+def test_feedback_controller_waits_after_release_retreat_before_homing():
+    env = MockBottleEnv(seed=0)
+    controller = BottleController(
+        ControllerConfig(
+            bottle_limit=1,
+            direct_right_drop=True,
+            live_pose_feedback=True,
+            post_release_settle_steps=4,
+            drop_validation_half_extents=(10.0, 10.0),
+            drop_validation_height_slack=10.0,
+        )
+    )
+    controller.reset(env.snapshot())
+    stages = []
+    phases = []
+    while True:
+        try:
+            planned = controller.next_action(env.snapshot())
+        except StopIteration:
+            break
+        stages.append(controller._feedback_stage)
+        phases.append(planned.phase)
+        env.step(planned.action)
+
+    settle_indices = [index for index, stage in enumerate(stages) if stage == "post_release_settle"]
+    assert len(settle_indices) == 4
+    assert all(phases[index] is Phase.HOLD for index in settle_indices)
+    assert any(stage == "home_raise" for stage in stages[settle_indices[-1] + 1 :])
 
 
 def test_place_clearance_descends_inside_bin_before_release():

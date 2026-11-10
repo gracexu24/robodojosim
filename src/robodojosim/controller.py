@@ -75,6 +75,7 @@ class ControllerConfig:
     grasp_settle_steps: int = 0
     lift_hold_steps: int = 1
     drop_hold_steps: int = 0
+    post_release_settle_steps: int = 0
     home_hold_steps: int = 1
     home_clearance_height: float = 0.15
     home_completion_height_offset: float = 0.0
@@ -176,8 +177,8 @@ class ControllerConfig:
             raise ValueError("rim_clearance cannot be negative")
         if self.place_clearance is not None and self.place_clearance < 0:
             raise ValueError("place_clearance cannot be negative when provided")
-        if self.drop_hold_steps < 0 or self.home_hold_steps < 0:
-            raise ValueError("drop_hold_steps and home_hold_steps cannot be negative")
+        if self.drop_hold_steps < 0 or self.post_release_settle_steps < 0 or self.home_hold_steps < 0:
+            raise ValueError("drop_hold_steps, post_release_settle_steps, and home_hold_steps cannot be negative")
         if self.home_clearance_height <= 0:
             raise ValueError("home_clearance_height must be positive")
         if not 0 <= self.home_completion_height_offset < 0.15:
@@ -1099,11 +1100,22 @@ class BottleController:
                 # decide whether the placement succeeded.
                 if reached or stalled:
                     self._feedback_target = None
-                    self._feedback_stage = "home_raise"
+                    self._feedback_repeat = 0
+                    self._feedback_stage = (
+                        "post_release_settle" if self.config.post_release_settle_steps else "home_raise"
+                    )
                     continue
                 return self._feedback_move_action(
                     snapshot, self._feedback_target, Phase.RETREAT, self.config.max_translation_step
                 )
+
+            if stage == "post_release_settle":
+                if self._feedback_repeat >= self.config.post_release_settle_steps:
+                    self._feedback_repeat = 0
+                    self._feedback_stage = "home_raise"
+                    continue
+                self._feedback_repeat += 1
+                return self._feedback_hold_action(snapshot, Phase.HOLD)
 
             if stage == "home_raise":
                 assert self._active_arm is not None
@@ -1417,6 +1429,7 @@ class BottleController:
             "drop_hold": Phase.HOLD,
             "release": Phase.RELEASE,
             "retreat": Phase.RETREAT,
+            "post_release_settle": Phase.HOLD,
             "home_raise": Phase.HOME,
             "home_overhead": Phase.HOME,
             "home_descend": Phase.HOME,
